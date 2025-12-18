@@ -1,18 +1,15 @@
 /**
  * GSPro Controller for WT32-SC01 Plus V3.3
+ * ULTRA MODERN UI EDITION
  *
  * ESP32-S3 with 3.5" IPS Touchscreen (480x320)
  * Bluetooth HID Keyboard for GSPro Golf Simulator
  *
- * Controls:
- * - Ctrl+M: Mulligan
- * - P: Pin Indicator
- * - J: Scout View
- * - Y: Heat Map
- * - F5: Free Flight
- * - Arrow Keys: Aim
- * - C/V: Tee Box Adjustment
- * - O: Flyover
+ * Features:
+ * - Glassmorphism UI design
+ * - Neon glow effects
+ * - Smooth animations
+ * - Modern dark theme with accent colors
  */
 
 #include <Arduino.h>
@@ -21,6 +18,26 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 #include <lvgl.h>
+
+// ============================================================================
+// Color Palette - Modern Neon Theme
+// ============================================================================
+#define COLOR_BG_DARK       0x0D0D0F
+#define COLOR_BG_CARD       0x1A1A2E
+#define COLOR_BG_CARD_LIGHT 0x252542
+#define COLOR_ACCENT_CYAN   0x00F5FF
+#define COLOR_ACCENT_PINK   0xFF006E
+#define COLOR_ACCENT_PURPLE 0x8B5CF6
+#define COLOR_ACCENT_GREEN  0x00FF88
+#define COLOR_ACCENT_ORANGE 0xFF9500
+#define COLOR_ACCENT_BLUE   0x3B82F6
+#define COLOR_TEXT_PRIMARY  0xFFFFFF
+#define COLOR_TEXT_SECONDARY 0x9CA3AF
+#define COLOR_TEXT_MUTED    0x4B5563
+#define COLOR_GLASS_BORDER  0x374151
+#define COLOR_SUCCESS       0x10B981
+#define COLOR_ERROR         0xEF4444
+#define COLOR_WARNING       0xF59E0B
 
 // ============================================================================
 // Display Configuration for WT32-SC01 Plus
@@ -33,7 +50,6 @@ class LGFX : public lgfx::LGFX_Device {
 
 public:
     LGFX(void) {
-        // Bus configuration
         {
             auto cfg = _bus_instance.config();
             cfg.freq_write = 20000000;
@@ -51,8 +67,6 @@ public:
             _bus_instance.config(cfg);
             _panel_instance.setBus(&_bus_instance);
         }
-
-        // Panel configuration
         {
             auto cfg = _panel_instance.config();
             cfg.pin_cs = -1;
@@ -74,8 +88,6 @@ public:
             cfg.bus_shared = true;
             _panel_instance.config(cfg);
         }
-
-        // Backlight configuration
         {
             auto cfg = _light_instance.config();
             cfg.pin_bl = 45;
@@ -85,8 +97,6 @@ public:
             _light_instance.config(cfg);
             _panel_instance.setLight(&_light_instance);
         }
-
-        // Touch configuration (FT6336)
         {
             auto cfg = _touch_instance.config();
             cfg.x_min = 0;
@@ -104,7 +114,6 @@ public:
             _touch_instance.config(cfg);
             _panel_instance.setTouch(&_touch_instance);
         }
-
         setPanel(&_panel_instance);
     }
 };
@@ -115,25 +124,34 @@ public:
 LGFX lcd;
 BleKeyboard bleKeyboard("GSPro Controller", "ESP32", 100);
 
-// LVGL display buffer
 static lv_disp_draw_buf_t draw_buf;
-static lv_color_t buf1[480 * 20];
-static lv_color_t buf2[480 * 20];
+static lv_color_t buf1[480 * 30];
+static lv_color_t buf2[480 * 30];
 
-// Screen dimensions
 static const uint16_t screenWidth = 480;
 static const uint16_t screenHeight = 320;
 
-// UI elements
+// UI Elements
 static lv_obj_t *status_label;
+static lv_obj_t *status_icon;
+static lv_obj_t *connection_indicator;
 static lv_obj_t *connection_label;
-static lv_style_t style_btn;
-static lv_style_t style_btn_pressed;
+static lv_obj_t *main_container;
+
+// Styles
+static lv_style_t style_glass_card;
+static lv_style_t style_neon_btn;
+static lv_style_t style_neon_btn_pressed;
 static lv_style_t style_arrow_btn;
-static lv_style_t style_title;
+static lv_style_t style_arrow_btn_pressed;
+static lv_style_t style_special_btn;
+static lv_style_t style_special_btn_pressed;
+
+// Animation
+static lv_anim_t pulse_anim;
 
 // ============================================================================
-// LVGL Display Flush Callback
+// LVGL Callbacks
 // ============================================================================
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
     uint32_t w = (area->x2 - area->x1 + 1);
@@ -145,13 +163,9 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
     lv_disp_flush_ready(disp);
 }
 
-// ============================================================================
-// LVGL Touch Read Callback
-// ============================================================================
 void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data) {
     uint16_t touchX, touchY;
     bool touched = lcd.getTouch(&touchX, &touchY);
-
     if (touched) {
         data->state = LV_INDEV_STATE_PR;
         data->point.x = touchX;
@@ -162,11 +176,12 @@ void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data) {
 }
 
 // ============================================================================
-// Button Event Handlers
+// Keyboard Functions
 // ============================================================================
-void send_key(uint8_t key, bool with_ctrl = false, bool is_function = false) {
+void send_key(uint8_t key, bool with_ctrl = false) {
     if (!bleKeyboard.isConnected()) {
-        lv_label_set_text(status_label, "Not Connected!");
+        lv_label_set_text(status_label, "NOT CONNECTED");
+        lv_obj_set_style_text_color(status_label, lv_color_hex(COLOR_ERROR), 0);
         return;
     }
 
@@ -176,157 +191,213 @@ void send_key(uint8_t key, bool with_ctrl = false, bool is_function = false) {
         bleKeyboard.press(key);
         delay(50);
         bleKeyboard.releaseAll();
-    } else if (is_function) {
-        bleKeyboard.write(key);
     } else {
         bleKeyboard.write(key);
     }
 }
 
-// Mulligan (Ctrl+M)
+void update_status(const char* text, uint32_t color) {
+    lv_label_set_text(status_label, text);
+    lv_obj_set_style_text_color(status_label, lv_color_hex(color), 0);
+}
+
+// ============================================================================
+// Button Event Handlers
+// ============================================================================
 static void btn_mulligan_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         send_key('m', true);
-        lv_label_set_text(status_label, "Mulligan");
+        update_status("MULLIGAN", COLOR_ACCENT_PINK);
     }
 }
 
-// Pin Indicator (P)
 static void btn_pin_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         send_key('p');
-        lv_label_set_text(status_label, "Pin Indicator");
+        update_status("PIN INDICATOR", COLOR_ACCENT_CYAN);
     }
 }
 
-// Scout View (J)
 static void btn_scout_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         send_key('j');
-        lv_label_set_text(status_label, "Scout View");
+        update_status("SCOUT VIEW", COLOR_ACCENT_PURPLE);
     }
 }
 
-// Heat Map (Y)
 static void btn_heatmap_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         send_key('y');
-        lv_label_set_text(status_label, "Heat Map");
+        update_status("HEAT MAP", COLOR_ACCENT_ORANGE);
     }
 }
 
-// Free Flight (F5)
 static void btn_freeflight_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         bleKeyboard.write(KEY_F5);
-        lv_label_set_text(status_label, "Free Flight");
+        update_status("FREE FLIGHT", COLOR_ACCENT_GREEN);
     }
 }
 
-// Flyover (O)
 static void btn_flyover_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         send_key('o');
-        lv_label_set_text(status_label, "Flyover");
+        update_status("FLYOVER", COLOR_ACCENT_BLUE);
     }
 }
 
-// Tee Box Left (C)
 static void btn_tee_left_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         send_key('c');
-        lv_label_set_text(status_label, "Tee Left");
+        update_status("TEE LEFT", COLOR_ACCENT_CYAN);
     }
 }
 
-// Tee Box Right (V)
 static void btn_tee_right_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         send_key('v');
-        lv_label_set_text(status_label, "Tee Right");
+        update_status("TEE RIGHT", COLOR_ACCENT_CYAN);
     }
 }
 
-// Arrow Up
 static void btn_up_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         bleKeyboard.write(KEY_UP_ARROW);
-        lv_label_set_text(status_label, "Aim Up");
+        update_status("AIM UP", COLOR_ACCENT_GREEN);
     }
 }
 
-// Arrow Down
 static void btn_down_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         bleKeyboard.write(KEY_DOWN_ARROW);
-        lv_label_set_text(status_label, "Aim Down");
+        update_status("AIM DOWN", COLOR_ACCENT_GREEN);
     }
 }
 
-// Arrow Left
 static void btn_left_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         bleKeyboard.write(KEY_LEFT_ARROW);
-        lv_label_set_text(status_label, "Aim Left");
+        update_status("AIM LEFT", COLOR_ACCENT_GREEN);
     }
 }
 
-// Arrow Right
 static void btn_right_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         bleKeyboard.write(KEY_RIGHT_ARROW);
-        lv_label_set_text(status_label, "Aim Right");
+        update_status("AIM RIGHT", COLOR_ACCENT_GREEN);
     }
 }
 
 // ============================================================================
-// UI Setup
+// Style Setup
 // ============================================================================
 void setup_styles() {
-    // Button style
-    lv_style_init(&style_btn);
-    lv_style_set_radius(&style_btn, 10);
-    lv_style_set_bg_color(&style_btn, lv_color_hex(0x2E7D32));  // Green
-    lv_style_set_bg_grad_color(&style_btn, lv_color_hex(0x1B5E20));
-    lv_style_set_bg_grad_dir(&style_btn, LV_GRAD_DIR_VER);
-    lv_style_set_border_width(&style_btn, 2);
-    lv_style_set_border_color(&style_btn, lv_color_hex(0x4CAF50));
-    lv_style_set_shadow_width(&style_btn, 10);
-    lv_style_set_shadow_color(&style_btn, lv_color_hex(0x000000));
-    lv_style_set_shadow_ofs_y(&style_btn, 5);
-    lv_style_set_text_color(&style_btn, lv_color_hex(0xFFFFFF));
-    lv_style_set_pad_all(&style_btn, 10);
+    // Glass Card Style
+    lv_style_init(&style_glass_card);
+    lv_style_set_bg_color(&style_glass_card, lv_color_hex(COLOR_BG_CARD));
+    lv_style_set_bg_opa(&style_glass_card, LV_OPA_90);
+    lv_style_set_border_width(&style_glass_card, 1);
+    lv_style_set_border_color(&style_glass_card, lv_color_hex(COLOR_GLASS_BORDER));
+    lv_style_set_border_opa(&style_glass_card, LV_OPA_50);
+    lv_style_set_radius(&style_glass_card, 16);
+    lv_style_set_shadow_width(&style_glass_card, 20);
+    lv_style_set_shadow_color(&style_glass_card, lv_color_hex(0x000000));
+    lv_style_set_shadow_opa(&style_glass_card, LV_OPA_30);
+    lv_style_set_pad_all(&style_glass_card, 12);
 
-    // Pressed button style
-    lv_style_init(&style_btn_pressed);
-    lv_style_set_bg_color(&style_btn_pressed, lv_color_hex(0x1B5E20));
-    lv_style_set_shadow_ofs_y(&style_btn_pressed, 2);
+    // Neon Button Style (Main actions)
+    lv_style_init(&style_neon_btn);
+    lv_style_set_radius(&style_neon_btn, 12);
+    lv_style_set_bg_color(&style_neon_btn, lv_color_hex(COLOR_BG_CARD_LIGHT));
+    lv_style_set_bg_grad_color(&style_neon_btn, lv_color_hex(COLOR_BG_CARD));
+    lv_style_set_bg_grad_dir(&style_neon_btn, LV_GRAD_DIR_VER);
+    lv_style_set_border_width(&style_neon_btn, 2);
+    lv_style_set_border_color(&style_neon_btn, lv_color_hex(COLOR_ACCENT_CYAN));
+    lv_style_set_border_opa(&style_neon_btn, LV_OPA_70);
+    lv_style_set_shadow_width(&style_neon_btn, 15);
+    lv_style_set_shadow_color(&style_neon_btn, lv_color_hex(COLOR_ACCENT_CYAN));
+    lv_style_set_shadow_opa(&style_neon_btn, LV_OPA_40);
+    lv_style_set_shadow_spread(&style_neon_btn, 2);
+    lv_style_set_text_color(&style_neon_btn, lv_color_hex(COLOR_TEXT_PRIMARY));
+    lv_style_set_text_font(&style_neon_btn, &lv_font_montserrat_14);
+    lv_style_set_pad_all(&style_neon_btn, 8);
+    lv_style_set_transform_width(&style_neon_btn, 0);
+    lv_style_set_transform_height(&style_neon_btn, 0);
 
-    // Arrow button style
+    // Neon Button Pressed
+    lv_style_init(&style_neon_btn_pressed);
+    lv_style_set_bg_color(&style_neon_btn_pressed, lv_color_hex(COLOR_ACCENT_CYAN));
+    lv_style_set_bg_grad_color(&style_neon_btn_pressed, lv_color_hex(0x00A5AA));
+    lv_style_set_shadow_width(&style_neon_btn_pressed, 25);
+    lv_style_set_shadow_opa(&style_neon_btn_pressed, LV_OPA_70);
+    lv_style_set_text_color(&style_neon_btn_pressed, lv_color_hex(COLOR_BG_DARK));
+    lv_style_set_transform_width(&style_neon_btn_pressed, -2);
+    lv_style_set_transform_height(&style_neon_btn_pressed, -2);
+
+    // Arrow Button Style
     lv_style_init(&style_arrow_btn);
-    lv_style_set_radius(&style_arrow_btn, 8);
-    lv_style_set_bg_color(&style_arrow_btn, lv_color_hex(0x1565C0));  // Blue
-    lv_style_set_bg_grad_color(&style_arrow_btn, lv_color_hex(0x0D47A1));
-    lv_style_set_bg_grad_dir(&style_arrow_btn, LV_GRAD_DIR_VER);
+    lv_style_set_radius(&style_arrow_btn, 14);
+    lv_style_set_bg_color(&style_arrow_btn, lv_color_hex(COLOR_BG_CARD_LIGHT));
     lv_style_set_border_width(&style_arrow_btn, 2);
-    lv_style_set_border_color(&style_arrow_btn, lv_color_hex(0x42A5F5));
-    lv_style_set_text_color(&style_arrow_btn, lv_color_hex(0xFFFFFF));
-    lv_style_set_text_font(&style_arrow_btn, &lv_font_montserrat_24);
+    lv_style_set_border_color(&style_arrow_btn, lv_color_hex(COLOR_ACCENT_GREEN));
+    lv_style_set_border_opa(&style_arrow_btn, LV_OPA_80);
+    lv_style_set_shadow_width(&style_arrow_btn, 12);
+    lv_style_set_shadow_color(&style_arrow_btn, lv_color_hex(COLOR_ACCENT_GREEN));
+    lv_style_set_shadow_opa(&style_arrow_btn, LV_OPA_50);
+    lv_style_set_text_color(&style_arrow_btn, lv_color_hex(COLOR_ACCENT_GREEN));
+    lv_style_set_text_font(&style_arrow_btn, &lv_font_montserrat_20);
 
-    // Title style
-    lv_style_init(&style_title);
-    lv_style_set_text_color(&style_title, lv_color_hex(0x4CAF50));
-    lv_style_set_text_font(&style_title, &lv_font_montserrat_20);
+    // Arrow Button Pressed
+    lv_style_init(&style_arrow_btn_pressed);
+    lv_style_set_bg_color(&style_arrow_btn_pressed, lv_color_hex(COLOR_ACCENT_GREEN));
+    lv_style_set_text_color(&style_arrow_btn_pressed, lv_color_hex(COLOR_BG_DARK));
+    lv_style_set_shadow_opa(&style_arrow_btn_pressed, LV_OPA_90);
+    lv_style_set_transform_width(&style_arrow_btn_pressed, -2);
+    lv_style_set_transform_height(&style_arrow_btn_pressed, -2);
+
+    // Special Button Style (Mulligan, Free Flight)
+    lv_style_init(&style_special_btn);
+    lv_style_set_radius(&style_special_btn, 12);
+    lv_style_set_bg_color(&style_special_btn, lv_color_hex(COLOR_BG_CARD_LIGHT));
+    lv_style_set_border_width(&style_special_btn, 2);
+    lv_style_set_border_color(&style_special_btn, lv_color_hex(COLOR_ACCENT_PINK));
+    lv_style_set_border_opa(&style_special_btn, LV_OPA_80);
+    lv_style_set_shadow_width(&style_special_btn, 15);
+    lv_style_set_shadow_color(&style_special_btn, lv_color_hex(COLOR_ACCENT_PINK));
+    lv_style_set_shadow_opa(&style_special_btn, LV_OPA_50);
+    lv_style_set_text_color(&style_special_btn, lv_color_hex(COLOR_TEXT_PRIMARY));
+    lv_style_set_text_font(&style_special_btn, &lv_font_montserrat_14);
+    lv_style_set_pad_all(&style_special_btn, 8);
+
+    // Special Button Pressed
+    lv_style_init(&style_special_btn_pressed);
+    lv_style_set_bg_color(&style_special_btn_pressed, lv_color_hex(COLOR_ACCENT_PINK));
+    lv_style_set_text_color(&style_special_btn_pressed, lv_color_hex(COLOR_BG_DARK));
+    lv_style_set_shadow_opa(&style_special_btn_pressed, LV_OPA_80);
 }
 
-lv_obj_t* create_button(lv_obj_t *parent, const char *label, int x, int y,
-                        int w, int h, lv_event_cb_t event_cb) {
+// ============================================================================
+// UI Component Creation
+// ============================================================================
+lv_obj_t* create_section_label(lv_obj_t *parent, const char *text, int x, int y) {
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_color(label, lv_color_hex(COLOR_TEXT_MUTED), 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
+    lv_obj_set_pos(label, x, y);
+    return label;
+}
+
+lv_obj_t* create_neon_button(lv_obj_t *parent, const char *label, int x, int y,
+                              int w, int h, lv_event_cb_t event_cb,
+                              lv_style_t *style, lv_style_t *style_pr) {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_pos(btn, x, y);
     lv_obj_set_size(btn, w, h);
-    lv_obj_add_style(btn, &style_btn, 0);
-    lv_obj_add_style(btn, &style_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_style(btn, style, 0);
+    lv_obj_add_style(btn, style_pr, LV_STATE_PRESSED);
     lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_anim_time(btn, 100, 0);
 
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, label);
@@ -335,145 +406,263 @@ lv_obj_t* create_button(lv_obj_t *parent, const char *label, int x, int y,
     return btn;
 }
 
-lv_obj_t* create_arrow_button(lv_obj_t *parent, const char *symbol, int x, int y,
-                              int w, int h, lv_event_cb_t event_cb) {
-    lv_obj_t *btn = lv_btn_create(parent);
-    lv_obj_set_pos(btn, x, y);
-    lv_obj_set_size(btn, w, h);
-    lv_obj_add_style(btn, &style_arrow_btn, 0);
-    lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+void create_header() {
+    // Header container
+    lv_obj_t *header = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(header, 480, 50);
+    lv_obj_set_pos(header, 0, 0);
+    lv_obj_set_style_bg_color(header, lv_color_hex(COLOR_BG_DARK), 0);
+    lv_obj_set_style_bg_opa(header, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(header, 0, 0);
+    lv_obj_set_style_radius(header, 0, 0);
+    lv_obj_set_style_pad_all(header, 0, 0);
+    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *lbl = lv_label_create(btn);
-    lv_label_set_text(lbl, symbol);
-    lv_obj_center(lbl);
+    // Logo/Title
+    lv_obj_t *title = lv_label_create(header);
+    lv_label_set_text(title, "GSPRO");
+    lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    lv_obj_set_pos(title, 15, 12);
 
-    return btn;
+    lv_obj_t *subtitle = lv_label_create(header);
+    lv_label_set_text(subtitle, "CONTROLLER");
+    lv_obj_set_style_text_color(subtitle, lv_color_hex(COLOR_ACCENT_CYAN), 0);
+    lv_obj_set_style_text_font(subtitle, &lv_font_montserrat_12, 0);
+    lv_obj_set_pos(subtitle, 100, 18);
+
+    // Connection indicator (pulsing dot)
+    connection_indicator = lv_obj_create(header);
+    lv_obj_set_size(connection_indicator, 12, 12);
+    lv_obj_set_pos(connection_indicator, 380, 19);
+    lv_obj_set_style_radius(connection_indicator, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(connection_indicator, lv_color_hex(COLOR_WARNING), 0);
+    lv_obj_set_style_border_width(connection_indicator, 0, 0);
+    lv_obj_set_style_shadow_width(connection_indicator, 8, 0);
+    lv_obj_set_style_shadow_color(connection_indicator, lv_color_hex(COLOR_WARNING), 0);
+    lv_obj_set_style_shadow_opa(connection_indicator, LV_OPA_70, 0);
+
+    // Connection label
+    connection_label = lv_label_create(header);
+    lv_label_set_text(connection_label, "PAIRING");
+    lv_obj_set_style_text_color(connection_label, lv_color_hex(COLOR_WARNING), 0);
+    lv_obj_set_style_text_font(connection_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_pos(connection_label, 398, 17);
+}
+
+void create_status_bar() {
+    // Bottom status bar
+    lv_obj_t *status_bar = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(status_bar, 460, 36);
+    lv_obj_align(status_bar, LV_ALIGN_BOTTOM_MID, 0, -5);
+    lv_obj_add_style(status_bar, &style_glass_card, 0);
+    lv_obj_set_style_pad_all(status_bar, 8, 0);
+    lv_obj_clear_flag(status_bar, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Status icon
+    status_icon = lv_label_create(status_bar);
+    lv_label_set_text(status_icon, LV_SYMBOL_OK);
+    lv_obj_set_style_text_color(status_icon, lv_color_hex(COLOR_ACCENT_GREEN), 0);
+    lv_obj_set_style_text_font(status_icon, &lv_font_montserrat_16, 0);
+    lv_obj_set_pos(status_icon, 5, 2);
+
+    // Status label
+    status_label = lv_label_create(status_bar);
+    lv_label_set_text(status_label, "READY");
+    lv_obj_set_style_text_color(status_label, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_pos(status_label, 30, 3);
+
+    // Keyboard hint
+    lv_obj_t *hint = lv_label_create(status_bar);
+    lv_label_set_text(hint, "Ctrl+M | P | J | Y | F5 | O | C/V | Arrows");
+    lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_TEXT_MUTED), 0);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_align(hint, LV_ALIGN_RIGHT_MID, -5, 0);
+}
+
+void create_main_controls() {
+    // Left panel - View Controls
+    lv_obj_t *left_panel = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(left_panel, 145, 215);
+    lv_obj_set_pos(left_panel, 8, 55);
+    lv_obj_add_style(left_panel, &style_glass_card, 0);
+    lv_obj_clear_flag(left_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    create_section_label(left_panel, "VIEWS", 0, -5);
+
+    int btn_w = 118;
+    int btn_h = 38;
+    int spacing = 43;
+    int start_y = 15;
+
+    // Pin Indicator
+    create_neon_button(left_panel, "PIN", 0, start_y, btn_w, btn_h,
+                       btn_pin_handler, &style_neon_btn, &style_neon_btn_pressed);
+
+    // Scout View
+    create_neon_button(left_panel, "SCOUT", 0, start_y + spacing, btn_w, btn_h,
+                       btn_scout_handler, &style_neon_btn, &style_neon_btn_pressed);
+
+    // Heat Map
+    create_neon_button(left_panel, "HEAT MAP", 0, start_y + spacing*2, btn_w, btn_h,
+                       btn_heatmap_handler, &style_neon_btn, &style_neon_btn_pressed);
+
+    // Flyover
+    create_neon_button(left_panel, "FLYOVER", 0, start_y + spacing*3, btn_w, btn_h,
+                       btn_flyover_handler, &style_neon_btn, &style_neon_btn_pressed);
+}
+
+void create_center_controls() {
+    // Center panel - Aim Controls
+    lv_obj_t *center_panel = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(center_panel, 170, 215);
+    lv_obj_set_pos(center_panel, 158, 55);
+    lv_obj_add_style(center_panel, &style_glass_card, 0);
+    lv_obj_clear_flag(center_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    create_section_label(center_panel, "AIM CONTROL", 35, -5);
+
+    int arrow_size = 48;
+    int center_x = 61;  // (170 - 48) / 2
+    int center_y = 83;
+
+    // Up
+    lv_obj_t *btn_up = lv_btn_create(center_panel);
+    lv_obj_set_size(btn_up, arrow_size, arrow_size);
+    lv_obj_set_pos(btn_up, center_x, center_y - arrow_size - 5);
+    lv_obj_add_style(btn_up, &style_arrow_btn, 0);
+    lv_obj_add_style(btn_up, &style_arrow_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_up, btn_up_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_up = lv_label_create(btn_up);
+    lv_label_set_text(lbl_up, LV_SYMBOL_UP);
+    lv_obj_center(lbl_up);
+
+    // Down
+    lv_obj_t *btn_down = lv_btn_create(center_panel);
+    lv_obj_set_size(btn_down, arrow_size, arrow_size);
+    lv_obj_set_pos(btn_down, center_x, center_y + 5);
+    lv_obj_add_style(btn_down, &style_arrow_btn, 0);
+    lv_obj_add_style(btn_down, &style_arrow_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_down, btn_down_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_down = lv_label_create(btn_down);
+    lv_label_set_text(lbl_down, LV_SYMBOL_DOWN);
+    lv_obj_center(lbl_down);
+
+    // Left
+    lv_obj_t *btn_left = lv_btn_create(center_panel);
+    lv_obj_set_size(btn_left, arrow_size, arrow_size);
+    lv_obj_set_pos(btn_left, center_x - arrow_size - 5, center_y - arrow_size/2);
+    lv_obj_add_style(btn_left, &style_arrow_btn, 0);
+    lv_obj_add_style(btn_left, &style_arrow_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_left, btn_left_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_left = lv_label_create(btn_left);
+    lv_label_set_text(lbl_left, LV_SYMBOL_LEFT);
+    lv_obj_center(lbl_left);
+
+    // Right
+    lv_obj_t *btn_right = lv_btn_create(center_panel);
+    lv_obj_set_size(btn_right, arrow_size, arrow_size);
+    lv_obj_set_pos(btn_right, center_x + arrow_size + 5, center_y - arrow_size/2);
+    lv_obj_add_style(btn_right, &style_arrow_btn, 0);
+    lv_obj_add_style(btn_right, &style_arrow_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_right, btn_right_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_right = lv_label_create(btn_right);
+    lv_label_set_text(lbl_right, LV_SYMBOL_RIGHT);
+    lv_obj_center(lbl_right);
+
+    // Center decoration
+    lv_obj_t *center_dot = lv_obj_create(center_panel);
+    lv_obj_set_size(center_dot, 20, 20);
+    lv_obj_set_pos(center_dot, center_x + 14, center_y - 10);
+    lv_obj_set_style_radius(center_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(center_dot, lv_color_hex(COLOR_BG_CARD), 0);
+    lv_obj_set_style_border_width(center_dot, 2, 0);
+    lv_obj_set_style_border_color(center_dot, lv_color_hex(COLOR_ACCENT_GREEN), 0);
+    lv_obj_set_style_border_opa(center_dot, LV_OPA_50, 0);
+}
+
+void create_right_controls() {
+    // Right panel - Special Actions
+    lv_obj_t *right_panel = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(right_panel, 135, 215);
+    lv_obj_set_pos(right_panel, 335, 55);
+    lv_obj_add_style(right_panel, &style_glass_card, 0);
+    lv_obj_clear_flag(right_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    create_section_label(right_panel, "ACTIONS", 0, -5);
+
+    int btn_w = 108;
+    int btn_h = 42;
+
+    // Mulligan - Special pink button
+    create_neon_button(right_panel, "MULLIGAN", 0, 15, btn_w, btn_h,
+                       btn_mulligan_handler, &style_special_btn, &style_special_btn_pressed);
+
+    // Free Flight - Special pink button
+    create_neon_button(right_panel, "FREE FLT", 0, 65, btn_w, btn_h,
+                       btn_freeflight_handler, &style_special_btn, &style_special_btn_pressed);
+
+    // Tee Box section
+    create_section_label(right_panel, "TEE BOX", 0, 115);
+
+    // Tee buttons container
+    int tee_y = 135;
+
+    // Tee Left
+    lv_obj_t *btn_tee_l = lv_btn_create(right_panel);
+    lv_obj_set_size(btn_tee_l, 52, 42);
+    lv_obj_set_pos(btn_tee_l, 0, tee_y);
+    lv_obj_add_style(btn_tee_l, &style_neon_btn, 0);
+    lv_obj_add_style(btn_tee_l, &style_neon_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_tee_l, btn_tee_left_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_tee_l = lv_label_create(btn_tee_l);
+    lv_label_set_text(lbl_tee_l, LV_SYMBOL_LEFT " C");
+    lv_obj_center(lbl_tee_l);
+
+    // Tee Right
+    lv_obj_t *btn_tee_r = lv_btn_create(right_panel);
+    lv_obj_set_size(btn_tee_r, 52, 42);
+    lv_obj_set_pos(btn_tee_r, 56, tee_y);
+    lv_obj_add_style(btn_tee_r, &style_neon_btn, 0);
+    lv_obj_add_style(btn_tee_r, &style_neon_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_tee_r, btn_tee_right_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_tee_r = lv_label_create(btn_tee_r);
+    lv_label_set_text(lbl_tee_r, "V " LV_SYMBOL_RIGHT);
+    lv_obj_center(lbl_tee_r);
 }
 
 void create_ui() {
     setup_styles();
 
-    // Set dark background
-    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x1A1A1A), 0);
+    // Set dark background with subtle gradient effect
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BG_DARK), 0);
+    lv_obj_set_style_bg_opa(lv_scr_act(), LV_OPA_COVER, 0);
 
-    // Title
-    lv_obj_t *title = lv_label_create(lv_scr_act());
-    lv_label_set_text(title, "GSPro Controller");
-    lv_obj_add_style(title, &style_title, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
+    // Create UI components
+    create_header();
+    create_main_controls();
+    create_center_controls();
+    create_right_controls();
+    create_status_bar();
+}
 
-    // Connection status
-    connection_label = lv_label_create(lv_scr_act());
-    lv_label_set_text(connection_label, "BT: Connecting...");
-    lv_obj_set_style_text_color(connection_label, lv_color_hex(0xFFA726), 0);
-    lv_obj_set_style_text_font(connection_label, &lv_font_montserrat_12, 0);
-    lv_obj_align(connection_label, LV_ALIGN_TOP_RIGHT, -10, 8);
+// ============================================================================
+// Connection Animation
+// ============================================================================
+void pulse_anim_cb(void *var, int32_t v) {
+    lv_obj_set_style_opa((lv_obj_t *)var, v, 0);
+}
 
-    // Status label
-    status_label = lv_label_create(lv_scr_act());
-    lv_label_set_text(status_label, "Ready");
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_16, 0);
-    lv_obj_align(status_label, LV_ALIGN_BOTTOM_MID, 0, -8);
-
-    // ========== LEFT COLUMN - Main Controls ==========
-    int col1_x = 10;
-    int btn_w = 100;
-    int btn_h = 45;
-    int spacing = 52;
-    int start_y = 35;
-
-    // Mulligan (Ctrl+M)
-    create_button(lv_scr_act(), "Mulligan", col1_x, start_y, btn_w, btn_h, btn_mulligan_handler);
-
-    // Pin Indicator (P)
-    create_button(lv_scr_act(), "Pin", col1_x, start_y + spacing, btn_w, btn_h, btn_pin_handler);
-
-    // Scout View (J)
-    create_button(lv_scr_act(), "Scout", col1_x, start_y + spacing*2, btn_w, btn_h, btn_scout_handler);
-
-    // Heat Map (Y)
-    create_button(lv_scr_act(), "Heat Map", col1_x, start_y + spacing*3, btn_w, btn_h, btn_heatmap_handler);
-
-    // Flyover (O)
-    create_button(lv_scr_act(), "Flyover", col1_x, start_y + spacing*4, btn_w, btn_h, btn_flyover_handler);
-
-    // ========== MIDDLE COLUMN - Arrow Keys ==========
-    int arrow_size = 55;
-    int arrow_center_x = 190;
-    int arrow_center_y = 160;
-
-    // Arrow Up
-    create_arrow_button(lv_scr_act(), LV_SYMBOL_UP,
-                       arrow_center_x, arrow_center_y - arrow_size - 5,
-                       arrow_size, arrow_size, btn_up_handler);
-
-    // Arrow Down
-    create_arrow_button(lv_scr_act(), LV_SYMBOL_DOWN,
-                       arrow_center_x, arrow_center_y + 5,
-                       arrow_size, arrow_size, btn_down_handler);
-
-    // Arrow Left
-    create_arrow_button(lv_scr_act(), LV_SYMBOL_LEFT,
-                       arrow_center_x - arrow_size - 5, arrow_center_y - arrow_size/2,
-                       arrow_size, arrow_size, btn_left_handler);
-
-    // Arrow Right
-    create_arrow_button(lv_scr_act(), LV_SYMBOL_RIGHT,
-                       arrow_center_x + arrow_size + 5, arrow_center_y - arrow_size/2,
-                       arrow_size, arrow_size, btn_right_handler);
-
-    // Aim label
-    lv_obj_t *aim_label = lv_label_create(lv_scr_act());
-    lv_label_set_text(aim_label, "AIM");
-    lv_obj_set_style_text_color(aim_label, lv_color_hex(0x42A5F5), 0);
-    lv_obj_set_style_text_font(aim_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_pos(aim_label, arrow_center_x + 15, arrow_center_y - 20);
-
-    // ========== RIGHT COLUMN - Additional Controls ==========
-    int col2_x = 365;
-
-    // Free Flight (F5)
-    create_button(lv_scr_act(), "Free Flight", col2_x, start_y, btn_w, btn_h, btn_freeflight_handler);
-
-    // Tee Box section
-    lv_obj_t *tee_label = lv_label_create(lv_scr_act());
-    lv_label_set_text(tee_label, "Tee Box");
-    lv_obj_set_style_text_color(tee_label, lv_color_hex(0xAAAAAA), 0);
-    lv_obj_set_style_text_font(tee_label, &lv_font_montserrat_12, 0);
-    lv_obj_set_pos(tee_label, col2_x + 20, start_y + spacing + 5);
-
-    // Tee Left (C)
-    lv_obj_t *btn_tee_l = lv_btn_create(lv_scr_act());
-    lv_obj_set_pos(btn_tee_l, col2_x, start_y + spacing + 22);
-    lv_obj_set_size(btn_tee_l, 48, 40);
-    lv_obj_add_style(btn_tee_l, &style_btn, 0);
-    lv_obj_add_style(btn_tee_l, &style_btn_pressed, LV_STATE_PRESSED);
-    lv_obj_add_event_cb(btn_tee_l, btn_tee_left_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_tee_l = lv_label_create(btn_tee_l);
-    lv_label_set_text(lbl_tee_l, "C");
-    lv_obj_center(lbl_tee_l);
-
-    // Tee Right (V)
-    lv_obj_t *btn_tee_r = lv_btn_create(lv_scr_act());
-    lv_obj_set_pos(btn_tee_r, col2_x + 52, start_y + spacing + 22);
-    lv_obj_set_size(btn_tee_r, 48, 40);
-    lv_obj_add_style(btn_tee_r, &style_btn, 0);
-    lv_obj_add_style(btn_tee_r, &style_btn_pressed, LV_STATE_PRESSED);
-    lv_obj_add_event_cb(btn_tee_r, btn_tee_right_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_tee_r = lv_label_create(btn_tee_r);
-    lv_label_set_text(lbl_tee_r, "V");
-    lv_obj_center(lbl_tee_r);
-
-    // Key hints
-    lv_obj_t *hints = lv_label_create(lv_scr_act());
-    lv_label_set_text(hints,
-        "Ctrl+M  P  J  Y  O\n"
-        "F5  C/V  Arrows");
-    lv_obj_set_style_text_color(hints, lv_color_hex(0x666666), 0);
-    lv_obj_set_style_text_font(hints, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_align(hints, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(hints, LV_ALIGN_BOTTOM_RIGHT, -10, -25);
+void start_pulse_animation() {
+    lv_anim_init(&pulse_anim);
+    lv_anim_set_var(&pulse_anim, connection_indicator);
+    lv_anim_set_values(&pulse_anim, LV_OPA_40, LV_OPA_COVER);
+    lv_anim_set_time(&pulse_anim, 800);
+    lv_anim_set_playback_time(&pulse_anim, 800);
+    lv_anim_set_repeat_count(&pulse_anim, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_exec_cb(&pulse_anim, pulse_anim_cb);
+    lv_anim_start(&pulse_anim);
 }
 
 // ============================================================================
@@ -481,22 +670,23 @@ void create_ui() {
 // ============================================================================
 void setup() {
     Serial.begin(115200);
-    Serial.println("GSPro Controller Starting...");
+    Serial.println("GSPro Controller - Ultra Modern UI");
 
     // Initialize display
     lcd.init();
-    lcd.setRotation(1);  // Landscape
-    lcd.setBrightness(200);
+    lcd.setRotation(1);
+    lcd.setBrightness(220);
     lcd.fillScreen(TFT_BLACK);
 
-    // Show boot message
-    lcd.setTextColor(TFT_GREEN, TFT_BLACK);
-    lcd.setTextSize(2);
-    lcd.setCursor(120, 140);
-    lcd.println("GSPro Controller");
+    // Boot animation
+    lcd.setTextColor(0x07FF, TFT_BLACK);  // Cyan
+    lcd.setTextSize(3);
+    lcd.setCursor(130, 120);
+    lcd.println("GSPRO");
+    lcd.setTextColor(0xFFFF, TFT_BLACK);
     lcd.setTextSize(1);
-    lcd.setCursor(150, 170);
-    lcd.println("Initializing...");
+    lcd.setCursor(130, 160);
+    lcd.println("Initializing controller...");
 
     // Initialize BLE Keyboard
     bleKeyboard.begin();
@@ -504,11 +694,8 @@ void setup() {
 
     // Initialize LVGL
     lv_init();
+    lv_disp_draw_buf_init(&draw_buf, buf1, buf2, screenWidth * 30);
 
-    // Initialize display buffer
-    lv_disp_draw_buf_init(&draw_buf, buf1, buf2, screenWidth * 20);
-
-    // Initialize display driver
     static lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = screenWidth;
@@ -517,7 +704,6 @@ void setup() {
     disp_drv.draw_buf = &draw_buf;
     lv_disp_drv_register(&disp_drv);
 
-    // Initialize touch driver
     static lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
@@ -526,8 +712,9 @@ void setup() {
 
     // Create UI
     create_ui();
+    start_pulse_animation();
 
-    Serial.println("UI Created - Ready!");
+    Serial.println("UI Ready!");
 }
 
 // ============================================================================
@@ -546,13 +733,23 @@ void loop() {
         bool isConnected = bleKeyboard.isConnected();
         if (isConnected != wasConnected) {
             wasConnected = isConnected;
+
             if (isConnected) {
-                lv_label_set_text(connection_label, "BT: Connected");
-                lv_obj_set_style_text_color(connection_label, lv_color_hex(0x4CAF50), 0);
+                lv_label_set_text(connection_label, "LINKED");
+                lv_obj_set_style_text_color(connection_label, lv_color_hex(COLOR_SUCCESS), 0);
+                lv_obj_set_style_bg_color(connection_indicator, lv_color_hex(COLOR_SUCCESS), 0);
+                lv_obj_set_style_shadow_color(connection_indicator, lv_color_hex(COLOR_SUCCESS), 0);
+                lv_anim_del(connection_indicator, pulse_anim_cb);
+                lv_obj_set_style_opa(connection_indicator, LV_OPA_COVER, 0);
+                update_status("CONNECTED", COLOR_SUCCESS);
                 Serial.println("Bluetooth Connected!");
             } else {
-                lv_label_set_text(connection_label, "BT: Disconnected");
-                lv_obj_set_style_text_color(connection_label, lv_color_hex(0xF44336), 0);
+                lv_label_set_text(connection_label, "PAIRING");
+                lv_obj_set_style_text_color(connection_label, lv_color_hex(COLOR_WARNING), 0);
+                lv_obj_set_style_bg_color(connection_indicator, lv_color_hex(COLOR_WARNING), 0);
+                lv_obj_set_style_shadow_color(connection_indicator, lv_color_hex(COLOR_WARNING), 0);
+                start_pulse_animation();
+                update_status("DISCONNECTED", COLOR_ERROR);
                 Serial.println("Bluetooth Disconnected!");
             }
         }
