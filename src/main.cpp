@@ -954,7 +954,7 @@ void create_ui() {
     lv_obj_add_event_cb(btn_settings, btn_settings_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_settings = lv_label_create(btn_settings);
     lv_label_set_text(lbl_settings, LV_SYMBOL_SETTINGS " SETTINGS");
-    lv_obj_set_style_text_font(lbl_settings, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(lbl_settings, &lv_font_montserrat_12, 0);
     lv_obj_center(lbl_settings);
 
     // Create settings screen
@@ -1192,7 +1192,8 @@ void loop() {
                     networks += WiFi.RSSI(i);
                     networks += " dBm)";
                     if (WiFi.encryptionType(i) != WIFI_AUTH_OPEN) {
-                        networks += " " LV_SYMBOL_LOCK;
+                        networks += " ";
+                        networks += LV_SYMBOL_LOCK;
                     }
                     networks += "\n";
                 }
