@@ -1,15 +1,39 @@
 # GSPro Controller for WT32-SC01 Plus
 
-A modern touchscreen controller for GSPro Golf Simulator using the WT32-SC01 Plus V3.3 (ESP32-S3 with 3.5" IPS touchscreen). Features a beautiful glassmorphism UI with neon glow effects and smooth animations.
+A modern touchscreen controller for GSPro Golf Simulator using the WT32-SC01 Plus V3.3 (ESP32-S3 with 3.5" IPS touchscreen). Features a beautiful glassmorphism UI with neon glow effects, smooth animations, wireless connectivity, OTA updates, and intelligent power management.
 
 ## Features
 
-- 🎨 Ultra-modern glassmorphism UI design
-- ✨ Neon glow effects and smooth animations
-- 📱 3.5" IPS touchscreen interface (480x320)
-- 🎮 Bluetooth HID keyboard control for GSPro
-- ⚡ ESP32-S3 powered with high performance
-- 🌙 Dark theme with vibrant accent colors
+### Core Functionality
+- 🎮 **Bluetooth HID Keyboard** - Wireless control for GSPro Golf Simulator
+- 📱 **3.5" IPS Touchscreen** - Responsive touch interface (480x320)
+- ⚡ **ESP32-S3 Powered** - High performance with PSRAM support
+
+### User Interface
+- 🎨 **Ultra-modern Glassmorphism UI** - Beautiful translucent card design
+- ✨ **Neon Glow Effects** - Smooth animations and visual feedback
+- 🌙 **Dark Theme** - Eye-friendly with vibrant accent colors
+- ⚙️ **Settings Screen** - Comprehensive configuration interface
+
+### Connectivity & Updates
+- 📡 **WiFi Support** - Network scanning and connection management
+- 🔄 **OTA Updates** - Over-The-Air firmware updates via WiFi
+- 🔵 **Bluetooth Management** - Easy pairing and reconnection
+
+### Power Management
+- 💤 **Deep Sleep Mode** - Ultra-low power consumption when idle
+- 👆 **Touch Wake-Up** - Automatic touch detection to wake from sleep
+- 🔋 **Energy Efficient** - Smart timer-based wake checks
+
+### GSPro Controls
+- 🔄 **Mulligan** (Ctrl+M) - Take another shot
+- 📍 **Pin Indicator** (P) - Show pin position
+- 🔭 **Scout View** (J) - Preview green layout
+- 🗺️ **Heat Map** (Y) - Shot dispersion view
+- 🕊️ **Free Flight** (F5) - Free camera mode
+- 🦅 **Flyover** (O) - Course flyover view
+- ⛳ **Tee Box Controls** (C/V) - Move tee left/right
+- 🎯 **Aim Controls** (Arrow Keys) - Precise shot aiming
 
 ## Hardware Requirements
 
@@ -170,6 +194,26 @@ The project is pre-configured for the WT32-SC01 Plus V3.3. Key settings in `plat
 - **PSRAM:** Enabled
 - **USB CDC:** Enabled for serial debugging
 
+### OTA Configuration
+
+For security, you should change the default OTA password in `src/main.cpp`:
+
+```cpp
+// Line 1070 in main.cpp
+ArduinoOTA.setPassword("gspro2024");  // Change this password!
+```
+
+**To change the password:**
+1. Open `src/main.cpp`
+2. Find line 1070: `ArduinoOTA.setPassword("gspro2024");`
+3. Replace `"gspro2024"` with your own secure password
+4. Upload the new firmware
+
+**OTA Settings:**
+- **Hostname:** `GSProController`
+- **Default Password:** `gspro2024` (⚠️ CHANGE THIS!)
+- **Port:** 3232 (default Arduino OTA port)
+
 ## Dependencies
 
 All dependencies are automatically managed by PlatformIO:
@@ -177,6 +221,9 @@ All dependencies are automatically managed by PlatformIO:
 - **LovyanGFX** `^1.1.12` - High-performance display library
 - **LVGL** `^8.3.11` - Graphics library for embedded systems
 - **ESP32 BLE Keyboard** - Bluetooth HID keyboard functionality
+- **WiFi** (built-in) - WiFi connectivity for ESP32
+- **ArduinoOTA** (built-in) - Over-The-Air firmware updates
+- **ESP Sleep** (built-in) - Deep sleep power management
 
 ## Troubleshooting
 
@@ -223,15 +270,132 @@ upload_port = /dev/cu.usbserial-*  ; macOS
 **Problem:** Display colors incorrect
 **Solution:** The display uses RGB565 format. Check color definitions in `main.cpp`
 
+### WiFi & OTA Issues
+
+**Problem:** Can't find WiFi networks
+**Solution:**
+- Ensure your WiFi router is powered on and broadcasting
+- Check that you're within range of the network
+- Try scanning multiple times
+- The ESP32 only supports 2.4GHz WiFi (not 5GHz)
+
+**Problem:** OTA upload not working
+**Solution:**
+- Ensure the device is connected to WiFi first
+- Verify you're on the same network as the device
+- Check the OTA password matches what's in the code
+- In PlatformIO, look for network ports (not just USB ports)
+- Firewall may be blocking port 3232 - add exception if needed
+
+**Problem:** OTA update fails mid-transfer
+**Solution:**
+- Ensure stable WiFi connection
+- Move device closer to router
+- Try uploading again (ArduinoOTA is resumable)
+
+### Bluetooth Issues
+
+**Problem:** Can't pair with computer
+**Solution:**
+- Remove old "GSPro Controller" pairings from your computer
+- Restart Bluetooth on your computer
+- Use the "RESTART BLE" button in Settings screen
+- Power cycle the device
+
+**Problem:** Bluetooth disconnects frequently
+**Solution:**
+- Ensure you're within range (typically 10 meters)
+- Remove obstacles between device and computer
+- Check for other Bluetooth devices causing interference
+
+### Deep Sleep Issues
+
+**Problem:** Device won't wake from deep sleep
+**Solution:**
+- Touch the screen firmly for 1-2 seconds
+- If stuck, press the physical reset button on the device
+- The device checks for touch every 1 second
+
+**Problem:** Battery drains in deep sleep
+**Solution:**
+- This is expected behavior as the touch controller stays active
+- For longer storage, power off the device completely
+
 ## Usage
 
-Once uploaded to your device:
+### Initial Setup
 
-1. Power on the WT32-SC01 Plus
-2. The modern UI will appear on the touchscreen
-3. Pair the device with your computer via Bluetooth
-4. The controller will appear as a Bluetooth keyboard
-5. Use the touchscreen interface to control GSPro
+1. **Power on** the WT32-SC01 Plus
+2. The modern UI will appear with a boot animation
+3. **Pair via Bluetooth:**
+   - On your computer, search for Bluetooth devices
+   - Look for "GSPro Controller"
+   - Connect to pair with your device
+4. When connected, the status indicator will turn green and show "LINKED"
+
+### Main Controls
+
+The main screen provides quick access to all GSPro functions:
+
+**Left Panel - Views:**
+- PIN - Toggle pin indicator
+- SCOUT - Preview green layout
+- HEAT MAP - View shot dispersion
+- FLYOVER - Course flyover mode
+
+**Center Panel - Aim Controls:**
+- Arrow buttons for precise shot aiming
+- Large, easy-to-hit targets for quick adjustments
+
+**Right Panel - Actions:**
+- MULLIGAN - Take another shot
+- FREE FLT - Free flight camera mode
+- TEE BOX - Move tee position left/right (C/V keys)
+
+### Settings Screen
+
+Access the settings screen by tapping the **SETTINGS** button in the header.
+
+**WiFi Panel:**
+- **SCAN** - Search for available WiFi networks
+- **DISCONNECT** - Disconnect from current network
+- View network list with signal strength and security status
+- Connect to WiFi to enable OTA updates
+
+**Bluetooth Panel:**
+- View connection status
+- **RESTART BLE** - Restart Bluetooth if connection issues occur
+- Device name: "GSPro Controller"
+
+**OTA Update Panel:**
+- Monitor firmware update progress
+- Automatic updates when connected to WiFi
+- Progress bar shows update status
+- **To update firmware:**
+  1. Connect to WiFi using the WiFi panel
+  2. Use PlatformIO or Arduino IDE with network port:
+     - Hostname: `GSProController`
+     - Password: `gspro2024` (change in code for security)
+  3. Upload new firmware over WiFi
+
+**Power Panel:**
+- **DEEP SLEEP** - Enter low-power sleep mode
+- Touch screen to wake up (automatic detection)
+- Saves battery when not in use
+- Display turns off completely during sleep
+
+### Status Bar
+
+The bottom status bar shows:
+- Current action/command feedback
+- Keyboard shortcut reference
+- Real-time status updates
+
+### Connection Indicator
+
+Top-right corner shows Bluetooth status:
+- **Yellow (pulsing)** - Waiting for connection
+- **Green (solid)** - Connected and ready
 
 ## Contributing
 
@@ -246,6 +410,24 @@ This project is open source. Please check the LICENSE file for details.
 - **LovyanGFX:** Display driver library by lovyan03
 - **LVGL:** Graphics library for embedded systems
 - **ESP32 BLE Keyboard:** Bluetooth HID library
+- **ArduinoOTA:** Over-The-Air update framework by Arduino
+- **ESP32 WiFi & Sleep:** Espressif ESP32 framework libraries
+
+## Technical Details
+
+**Built with:**
+- PlatformIO IDE
+- Arduino Framework for ESP32
+- ESP32-S3 with dual-core processor @ 240MHz
+- 16MB Flash memory
+- PSRAM enabled for smooth graphics
+
+**Key Technologies:**
+- Bluetooth Low Energy (BLE) HID
+- WiFi 802.11 b/g/n (2.4GHz)
+- ArduinoOTA for wireless updates
+- LVGL graphics with hardware acceleration
+- Deep sleep with timer-based wake
 
 ---
 
