@@ -14,6 +14,10 @@
 
 #include <Arduino.h>
 #include <BleKeyboard.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
+#include <esp_sleep.h>
+#include <esp_wifi.h>
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
@@ -137,6 +141,28 @@ static lv_obj_t *status_icon;
 static lv_obj_t *connection_indicator;
 static lv_obj_t *connection_label;
 static lv_obj_t *main_container;
+static lv_obj_t *settings_container;
+static lv_obj_t *main_screen;
+static lv_obj_t *settings_screen;
+
+// Settings screen UI elements
+static lv_obj_t *wifi_status_label;
+static lv_obj_t *wifi_list;
+static lv_obj_t *ota_status_label;
+static lv_obj_t *ota_progress_bar;
+static lv_obj_t *bt_status_label;
+
+// Screen state
+enum ScreenState {
+    SCREEN_MAIN,
+    SCREEN_SETTINGS
+};
+static ScreenState current_screen = SCREEN_MAIN;
+
+// WiFi state
+static String selected_ssid = "";
+static bool wifi_scanning = false;
+static unsigned long last_wifi_scan = 0;
 
 // Styles
 static lv_style_t style_glass_card;
@@ -285,6 +311,81 @@ static void btn_right_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         bleKeyboard.write(KEY_RIGHT_ARROW);
         update_status("AIM RIGHT", COLOR_ACCENT_GREEN);
+    }
+}
+
+// ============================================================================
+// Settings Screen Functions
+// ============================================================================
+void show_settings_screen();
+void show_main_screen();
+
+static void btn_settings_handler(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        show_settings_screen();
+    }
+}
+
+static void btn_back_to_main_handler(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        show_main_screen();
+    }
+}
+
+static void btn_wifi_scan_handler(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        lv_label_set_text(wifi_status_label, "Scanning...");
+        wifi_scanning = true;
+        WiFi.scanDelete();
+        WiFi.scanNetworks(true);  // Async scan
+    }
+}
+
+static void btn_wifi_disconnect_handler(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        WiFi.disconnect();
+        lv_label_set_text(wifi_status_label, "Disconnected");
+    }
+}
+
+static void btn_ota_update_handler(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        lv_label_set_text(ota_status_label, "OTA Ready - Listening on network");
+        // OTA is already initialized, just update status
+    }
+}
+
+static void btn_deep_sleep_handler(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        // Show countdown
+        lcd.fillScreen(TFT_BLACK);
+        lcd.setTextColor(0x07FF, TFT_BLACK);  // Cyan
+        lcd.setTextSize(2);
+        lcd.setCursor(150, 140);
+        lcd.println("Entering Deep Sleep...");
+        lcd.setCursor(150, 170);
+        lcd.println("Touch to wake up");
+        delay(2000);
+
+        // Turn off display backlight to save power
+        lcd.setBrightness(0);
+
+        // Configure timer wake-up every 1 second to check for touch
+        // This uses minimal power while allowing touch detection
+        esp_sleep_enable_timer_wakeup(1000000); // 1 second in microseconds
+
+        // Enter deep sleep
+        esp_deep_sleep_start();
+    }
+}
+
+static void btn_bt_reconnect_handler(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        lv_label_set_text(bt_status_label, "Restarting BLE...");
+        bleKeyboard.end();
+        delay(1000);
+        bleKeyboard.begin();
+        lv_label_set_text(bt_status_label, "BLE Restarted - Pairing...");
     }
 }
 
@@ -632,6 +733,193 @@ void create_right_controls() {
     lv_obj_center(lbl_tee_r);
 }
 
+void create_settings_screen() {
+    // Settings screen container (hidden by default)
+    settings_screen = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(settings_screen, screenWidth, screenHeight);
+    lv_obj_set_pos(settings_screen, 0, 0);
+    lv_obj_set_style_bg_color(settings_screen, lv_color_hex(COLOR_BG_DARK), 0);
+    lv_obj_set_style_bg_opa(settings_screen, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(settings_screen, 0, 0);
+    lv_obj_set_style_radius(settings_screen, 0, 0);
+    lv_obj_set_style_pad_all(settings_screen, 0, 0);
+    lv_obj_add_flag(settings_screen, LV_OBJ_FLAG_HIDDEN);  // Hidden by default
+    lv_obj_clear_flag(settings_screen, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Header for settings
+    lv_obj_t *settings_header = lv_obj_create(settings_screen);
+    lv_obj_set_size(settings_header, 480, 50);
+    lv_obj_set_pos(settings_header, 0, 0);
+    lv_obj_set_style_bg_color(settings_header, lv_color_hex(COLOR_BG_DARK), 0);
+    lv_obj_set_style_bg_opa(settings_header, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(settings_header, 0, 0);
+    lv_obj_set_style_radius(settings_header, 0, 0);
+    lv_obj_set_style_pad_all(settings_header, 0, 0);
+    lv_obj_clear_flag(settings_header, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Back button
+    lv_obj_t *btn_back = lv_btn_create(settings_header);
+    lv_obj_set_size(btn_back, 70, 35);
+    lv_obj_set_pos(btn_back, 10, 8);
+    lv_obj_add_style(btn_back, &style_neon_btn, 0);
+    lv_obj_add_style(btn_back, &style_neon_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_back, btn_back_to_main_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_back = lv_label_create(btn_back);
+    lv_label_set_text(lbl_back, LV_SYMBOL_LEFT " BACK");
+    lv_obj_center(lbl_back);
+
+    // Settings title
+    lv_obj_t *settings_title = lv_label_create(settings_header);
+    lv_label_set_text(settings_title, "SETTINGS");
+    lv_obj_set_style_text_color(settings_title, lv_color_hex(COLOR_ACCENT_CYAN), 0);
+    lv_obj_set_style_text_font(settings_title, &lv_font_montserrat_24, 0);
+    lv_obj_align(settings_title, LV_ALIGN_CENTER, 0, 0);
+
+    // ========== WiFi Panel ==========
+    lv_obj_t *wifi_panel = lv_obj_create(settings_screen);
+    lv_obj_set_size(wifi_panel, 220, 240);
+    lv_obj_set_pos(wifi_panel, 10, 55);
+    lv_obj_add_style(wifi_panel, &style_glass_card, 0);
+    lv_obj_clear_flag(wifi_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *wifi_title = lv_label_create(wifi_panel);
+    lv_label_set_text(wifi_title, LV_SYMBOL_WIFI " WiFi");
+    lv_obj_set_style_text_color(wifi_title, lv_color_hex(COLOR_ACCENT_CYAN), 0);
+    lv_obj_set_style_text_font(wifi_title, &lv_font_montserrat_16, 0);
+    lv_obj_set_pos(wifi_title, 0, -5);
+
+    wifi_status_label = lv_label_create(wifi_panel);
+    lv_label_set_text(wifi_status_label, "Disconnected");
+    lv_obj_set_style_text_color(wifi_status_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(wifi_status_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_pos(wifi_status_label, 0, 25);
+
+    // WiFi Scan button
+    lv_obj_t *btn_scan = lv_btn_create(wifi_panel);
+    lv_obj_set_size(btn_scan, 90, 35);
+    lv_obj_set_pos(btn_scan, 0, 50);
+    lv_obj_add_style(btn_scan, &style_neon_btn, 0);
+    lv_obj_add_style(btn_scan, &style_neon_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_scan, btn_wifi_scan_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_scan = lv_label_create(btn_scan);
+    lv_label_set_text(lbl_scan, "SCAN");
+    lv_obj_center(lbl_scan);
+
+    // WiFi Disconnect button
+    lv_obj_t *btn_disconnect = lv_btn_create(wifi_panel);
+    lv_obj_set_size(btn_disconnect, 90, 35);
+    lv_obj_set_pos(btn_disconnect, 100, 50);
+    lv_obj_add_style(btn_disconnect, &style_special_btn, 0);
+    lv_obj_add_style(btn_disconnect, &style_special_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_disconnect, btn_wifi_disconnect_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_disconnect = lv_label_create(btn_disconnect);
+    lv_label_set_text(lbl_disconnect, "DISCONNECT");
+    lv_obj_center(lbl_disconnect);
+
+    // WiFi networks list (scrollable)
+    wifi_list = lv_textarea_create(wifi_panel);
+    lv_obj_set_size(wifi_list, 190, 120);
+    lv_obj_set_pos(wifi_list, 0, 95);
+    lv_textarea_set_text(wifi_list, "Press SCAN to find networks");
+    lv_obj_set_style_text_font(wifi_list, &lv_font_montserrat_12, 0);
+    lv_textarea_set_cursor_click_pos(wifi_list, false);
+
+    // ========== Bluetooth Panel ==========
+    lv_obj_t *bt_panel = lv_obj_create(settings_screen);
+    lv_obj_set_size(bt_panel, 220, 115);
+    lv_obj_set_pos(bt_panel, 240, 55);
+    lv_obj_add_style(bt_panel, &style_glass_card, 0);
+    lv_obj_clear_flag(bt_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *bt_title = lv_label_create(bt_panel);
+    lv_label_set_text(bt_title, LV_SYMBOL_BLUETOOTH " Bluetooth");
+    lv_obj_set_style_text_color(bt_title, lv_color_hex(COLOR_ACCENT_PURPLE), 0);
+    lv_obj_set_style_text_font(bt_title, &lv_font_montserrat_16, 0);
+    lv_obj_set_pos(bt_title, 0, -5);
+
+    bt_status_label = lv_label_create(bt_panel);
+    lv_label_set_text(bt_status_label, "Device: GSPro Controller");
+    lv_obj_set_style_text_color(bt_status_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(bt_status_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_pos(bt_status_label, 0, 25);
+
+    // BT Reconnect button
+    lv_obj_t *btn_bt_reconnect = lv_btn_create(bt_panel);
+    lv_obj_set_size(btn_bt_reconnect, 190, 38);
+    lv_obj_set_pos(btn_bt_reconnect, 0, 55);
+    lv_obj_add_style(btn_bt_reconnect, &style_neon_btn, 0);
+    lv_obj_add_style(btn_bt_reconnect, &style_neon_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_bt_reconnect, btn_bt_reconnect_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_bt_reconnect = lv_label_create(btn_bt_reconnect);
+    lv_label_set_text(lbl_bt_reconnect, "RESTART BLE");
+    lv_obj_center(lbl_bt_reconnect);
+
+    // ========== OTA Panel ==========
+    lv_obj_t *ota_panel = lv_obj_create(settings_screen);
+    lv_obj_set_size(ota_panel, 220, 115);
+    lv_obj_set_pos(ota_panel, 240, 180);
+    lv_obj_add_style(ota_panel, &style_glass_card, 0);
+    lv_obj_clear_flag(ota_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *ota_title = lv_label_create(ota_panel);
+    lv_label_set_text(ota_title, LV_SYMBOL_DOWNLOAD " OTA Update");
+    lv_obj_set_style_text_color(ota_title, lv_color_hex(COLOR_ACCENT_ORANGE), 0);
+    lv_obj_set_style_text_font(ota_title, &lv_font_montserrat_16, 0);
+    lv_obj_set_pos(ota_title, 0, -5);
+
+    ota_status_label = lv_label_create(ota_panel);
+    lv_label_set_text(ota_status_label, "Ready for updates");
+    lv_obj_set_style_text_color(ota_status_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(ota_status_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_pos(ota_status_label, 0, 25);
+
+    ota_progress_bar = lv_bar_create(ota_panel);
+    lv_obj_set_size(ota_progress_bar, 190, 15);
+    lv_obj_set_pos(ota_progress_bar, 0, 48);
+    lv_bar_set_value(ota_progress_bar, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(ota_progress_bar, lv_color_hex(COLOR_BG_CARD), 0);
+    lv_obj_set_style_bg_color(ota_progress_bar, lv_color_hex(COLOR_ACCENT_ORANGE), LV_PART_INDICATOR);
+
+    // ========== Power Panel ==========
+    lv_obj_t *power_panel = lv_obj_create(settings_screen);
+    lv_obj_set_size(power_panel, 450, 60);
+    lv_obj_set_pos(power_panel, 10, 305);
+    lv_obj_add_style(power_panel, &style_glass_card, 0);
+    lv_obj_clear_flag(power_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Deep Sleep button
+    lv_obj_t *btn_sleep = lv_btn_create(power_panel);
+    lv_obj_set_size(btn_sleep, 200, 45);
+    lv_obj_set_pos(btn_sleep, 120, 0);
+    lv_obj_add_style(btn_sleep, &style_special_btn, 0);
+    lv_obj_add_style(btn_sleep, &style_special_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_sleep, btn_deep_sleep_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_border_color(btn_sleep, lv_color_hex(COLOR_ERROR), 0);
+    lv_obj_set_style_shadow_color(btn_sleep, lv_color_hex(COLOR_ERROR), 0);
+    lv_obj_t *lbl_sleep = lv_label_create(btn_sleep);
+    lv_label_set_text(lbl_sleep, LV_SYMBOL_POWER " DEEP SLEEP");
+    lv_obj_set_style_text_font(lbl_sleep, &lv_font_montserrat_16, 0);
+    lv_obj_center(lbl_sleep);
+
+    lv_obj_t *power_hint = lv_label_create(power_panel);
+    lv_label_set_text(power_hint, "Touch screen to wake (auto-detects)");
+    lv_obj_set_style_text_color(power_hint, lv_color_hex(COLOR_TEXT_MUTED), 0);
+    lv_obj_set_style_text_font(power_hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_pos(power_hint, 95, 28);
+}
+
+void show_settings_screen() {
+    if (main_screen) lv_obj_add_flag(main_screen, LV_OBJ_FLAG_HIDDEN);
+    if (settings_screen) lv_obj_clear_flag(settings_screen, LV_OBJ_FLAG_HIDDEN);
+    current_screen = SCREEN_SETTINGS;
+}
+
+void show_main_screen() {
+    if (settings_screen) lv_obj_add_flag(settings_screen, LV_OBJ_FLAG_HIDDEN);
+    if (main_screen) lv_obj_clear_flag(main_screen, LV_OBJ_FLAG_HIDDEN);
+    current_screen = SCREEN_MAIN;
+}
+
 void create_ui() {
     setup_styles();
 
@@ -639,12 +927,38 @@ void create_ui() {
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BG_DARK), 0);
     lv_obj_set_style_bg_opa(lv_scr_act(), LV_OPA_COVER, 0);
 
-    // Create UI components
+    // Create main screen container
+    main_screen = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(main_screen, screenWidth, screenHeight);
+    lv_obj_set_pos(main_screen, 0, 0);
+    lv_obj_set_style_bg_opa(main_screen, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(main_screen, 0, 0);
+    lv_obj_set_style_radius(main_screen, 0, 0);
+    lv_obj_set_style_pad_all(main_screen, 0, 0);
+    lv_obj_clear_flag(main_screen, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Create UI components on main screen
     create_header();
     create_main_controls();
     create_center_controls();
     create_right_controls();
     create_status_bar();
+
+    // Add settings button to header
+    lv_obj_t *header = lv_obj_get_child(main_screen, 0);  // Get header
+    lv_obj_t *btn_settings = lv_btn_create(header);
+    lv_obj_set_size(btn_settings, 80, 35);
+    lv_obj_set_pos(btn_settings, 280, 8);
+    lv_obj_add_style(btn_settings, &style_neon_btn, 0);
+    lv_obj_add_style(btn_settings, &style_neon_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_settings, btn_settings_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_settings = lv_label_create(btn_settings);
+    lv_label_set_text(lbl_settings, LV_SYMBOL_SETTINGS " SETTINGS");
+    lv_obj_set_style_text_font(lbl_settings, &lv_font_montserrat_10, 0);
+    lv_obj_center(lbl_settings);
+
+    // Create settings screen
+    create_settings_screen();
 }
 
 // ============================================================================
@@ -670,11 +984,42 @@ void start_pulse_animation() {
 // ============================================================================
 void setup() {
     Serial.begin(115200);
+
+    // Check if waking from deep sleep
+    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+    bool woke_from_sleep = false;
+
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
+        Serial.println("Woke from timer - checking for touch");
+        woke_from_sleep = true;
+
+        // Initialize display briefly to check touch
+        lcd.init();
+        lcd.setRotation(1);
+
+        // Quick touch check
+        uint16_t x, y;
+        bool touched = lcd.getTouch(&x, &y);
+
+        if (!touched) {
+            // No touch detected, go back to sleep immediately
+            Serial.println("No touch - returning to sleep");
+            lcd.setBrightness(0);
+            esp_sleep_enable_timer_wakeup(1000000); // 1 second
+            esp_deep_sleep_start();
+        }
+
+        // Touch detected, continue with full boot
+        Serial.println("Touch detected - waking up!");
+    }
+
     Serial.println("GSPro Controller - Ultra Modern UI");
 
-    // Initialize display
-    lcd.init();
-    lcd.setRotation(1);
+    // Initialize display (only if not already initialized from wake check)
+    if (!woke_from_sleep) {
+        lcd.init();
+        lcd.setRotation(1);
+    }
     lcd.setBrightness(220);
     lcd.fillScreen(TFT_BLACK);
 
@@ -715,6 +1060,59 @@ void setup() {
     start_pulse_animation();
 
     Serial.println("UI Ready!");
+
+    // Initialize WiFi in STA mode
+    WiFi.mode(WIFI_STA);
+    Serial.println("WiFi initialized in Station mode");
+
+    // Initialize ArduinoOTA
+    ArduinoOTA.setHostname("GSProController");
+    ArduinoOTA.setPassword("gspro2024");  // Change this password!
+
+    ArduinoOTA.onStart([]() {
+        String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
+        Serial.println("OTA Start updating " + type);
+        if (ota_status_label) {
+            lv_label_set_text(ota_status_label, "Updating firmware...");
+        }
+    });
+
+    ArduinoOTA.onEnd([]() {
+        Serial.println("\nOTA End");
+        if (ota_status_label) {
+            lv_label_set_text(ota_status_label, "Update complete! Rebooting...");
+        }
+    });
+
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        unsigned int percent = (progress / (total / 100));
+        Serial.printf("OTA Progress: %u%%\r", percent);
+        if (ota_progress_bar) {
+            lv_bar_set_value(ota_progress_bar, percent, LV_ANIM_OFF);
+        }
+        if (ota_status_label) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "Updating: %u%%", percent);
+            lv_label_set_text(ota_status_label, buf);
+        }
+    });
+
+    ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("OTA Error[%u]: ", error);
+        String errorMsg = "Error: ";
+        if (error == OTA_AUTH_ERROR) errorMsg += "Auth Failed";
+        else if (error == OTA_BEGIN_ERROR) errorMsg += "Begin Failed";
+        else if (error == OTA_CONNECT_ERROR) errorMsg += "Connect Failed";
+        else if (error == OTA_RECEIVE_ERROR) errorMsg += "Receive Failed";
+        else if (error == OTA_END_ERROR) errorMsg += "End Failed";
+        Serial.println(errorMsg);
+        if (ota_status_label) {
+            lv_label_set_text(ota_status_label, errorMsg.c_str());
+        }
+    });
+
+    ArduinoOTA.begin();
+    Serial.println("OTA initialized. Hostname: GSProController, Password: gspro2024");
 }
 
 // ============================================================================
@@ -725,6 +1123,9 @@ bool wasConnected = false;
 
 void loop() {
     lv_timer_handler();
+
+    // Handle OTA updates
+    ArduinoOTA.handle();
 
     // Update connection status every 500ms
     if (millis() - lastConnectionCheck > 500) {
@@ -752,6 +1153,61 @@ void loop() {
                 update_status("DISCONNECTED", COLOR_ERROR);
                 Serial.println("Bluetooth Disconnected!");
             }
+        }
+
+        // Update WiFi status in settings screen
+        if (current_screen == SCREEN_SETTINGS && wifi_status_label) {
+            if (WiFi.status() == WL_CONNECTED) {
+                String status = "Connected: " + WiFi.SSID();
+                lv_label_set_text(wifi_status_label, status.c_str());
+            } else if (!wifi_scanning) {
+                lv_label_set_text(wifi_status_label, "Disconnected");
+            }
+        }
+
+        // Update Bluetooth status in settings screen
+        if (current_screen == SCREEN_SETTINGS && bt_status_label) {
+            if (bleKeyboard.isConnected()) {
+                lv_label_set_text(bt_status_label, "Status: Connected");
+            } else {
+                lv_label_set_text(bt_status_label, "Status: Waiting for pairing...");
+            }
+        }
+    }
+
+    // Handle WiFi scan results
+    if (wifi_scanning) {
+        int n = WiFi.scanComplete();
+        if (n >= 0) {
+            wifi_scanning = false;
+
+            if (n == 0) {
+                lv_textarea_set_text(wifi_list, "No networks found");
+                lv_label_set_text(wifi_status_label, "No networks found");
+            } else {
+                String networks = "";
+                for (int i = 0; i < n && i < 15; i++) {  // Limit to 15 networks
+                    networks += WiFi.SSID(i);
+                    networks += " (";
+                    networks += WiFi.RSSI(i);
+                    networks += " dBm)";
+                    if (WiFi.encryptionType(i) != WIFI_AUTH_OPEN) {
+                        networks += " " LV_SYMBOL_LOCK;
+                    }
+                    networks += "\n";
+                }
+                lv_textarea_set_text(wifi_list, networks.c_str());
+
+                char buf[64];
+                snprintf(buf, sizeof(buf), "Found %d networks", n);
+                lv_label_set_text(wifi_status_label, buf);
+
+                Serial.printf("Found %d networks\n", n);
+            }
+        } else if (n == WIFI_SCAN_FAILED) {
+            wifi_scanning = false;
+            lv_textarea_set_text(wifi_list, "Scan failed");
+            lv_label_set_text(wifi_status_label, "Scan failed");
         }
     }
 
