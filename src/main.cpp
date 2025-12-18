@@ -127,8 +127,7 @@ public:
 LGFX lcd;
 BleKeyboard bleKeyboard("GSPro Controller", "ESP32", 100);
 
-static lv_color_t buf1[480 * 30];
-static lv_color_t buf2[480 * 30];
+static lv_color_t buf1[480 * 12];
 static lv_display_t *display;
 static lv_indev_t *input_device;
 
@@ -1043,7 +1042,7 @@ void setup() {
 
     display = lv_display_create(screenWidth, screenHeight);
     lv_display_set_flush_cb(display, my_disp_flush);
-    lv_display_set_buffers(display, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(display, buf1, nullptr, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
 
     input_device = lv_indev_create();
     lv_indev_set_type(input_device, LV_INDEV_TYPE_POINTER);
