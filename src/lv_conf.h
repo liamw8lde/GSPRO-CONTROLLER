@@ -22,7 +22,7 @@
    MEMORY SETTINGS
  *=========================*/
 #define LV_MEM_CUSTOM 0
-#define LV_MEM_SIZE (64U * 1024U)
+#define LV_MEM_SIZE (32U * 1024U)
 #define LV_MEM_ADR 0
 #define LV_MEM_BUF_MAX_NUM 16
 #define LV_MEMCPY_MEMSET_STD 1
@@ -48,7 +48,7 @@
 #define LV_DRAW_COMPLEX 1
 #define LV_SHADOW_CACHE_SIZE 0
 #define LV_CIRCLE_CACHE_SIZE 4
-#define LV_LAYER_SIMPLE_BUF_SIZE (24 * 1024)
+#define LV_LAYER_SIMPLE_BUF_SIZE (8 * 1024)
 #define LV_IMG_CACHE_DEF_SIZE 0
 #define LV_GRADIENT_MAX_STOPS 2
 #define LV_GRAD_CACHE_DEF_SIZE 0
@@ -66,7 +66,6 @@
  * Logging
  *-----------*/
 #define LV_USE_LOG 0
-#define LV_LOG_LEVEL LV_LOG_LEVEL_WARN
 #define LV_LOG_PRINTF 0
 
 /*-------------
