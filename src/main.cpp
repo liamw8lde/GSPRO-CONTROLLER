@@ -987,9 +987,11 @@ void setup() {
 
     // Check if waking from deep sleep
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+    bool woke_from_sleep = false;
 
     if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
         Serial.println("Woke from timer - checking for touch");
+        woke_from_sleep = true;
 
         // Initialize display briefly to check touch
         lcd.init();
@@ -1013,9 +1015,11 @@ void setup() {
 
     Serial.println("GSPro Controller - Ultra Modern UI");
 
-    // Initialize display
-    lcd.init();
-    lcd.setRotation(1);
+    // Initialize display (only if not already initialized from wake check)
+    if (!woke_from_sleep) {
+        lcd.init();
+        lcd.setRotation(1);
+    }
     lcd.setBrightness(220);
     lcd.fillScreen(TFT_BLACK);
 
