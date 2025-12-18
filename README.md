@@ -1,13 +1,13 @@
-# GSPro Controller for WT32-SC01 Plus
+# GSPro Controller for ESP32-WROVER-B
 
-A modern touchscreen controller for GSPro Golf Simulator using the WT32-SC01 Plus V3.3 (ESP32-S3 with 3.5" IPS touchscreen). Features a beautiful glassmorphism UI with neon glow effects, smooth animations, wireless connectivity, OTA updates, and intelligent power management.
+A modern touchscreen controller for GSPro Golf Simulator using the ESP32-WROVER-B with 3.5" IPS touchscreen. Features a beautiful glassmorphism UI with neon glow effects, smooth animations, wireless connectivity, OTA updates, and intelligent power management.
 
 ## Features
 
 ### Core Functionality
 - 🎮 **Bluetooth HID Keyboard** - Wireless control for GSPro Golf Simulator
-- 📱 **3.5" IPS Touchscreen** - Responsive touch interface (480x320)
-- ⚡ **ESP32-S3 Powered** - High performance with PSRAM support
+- 📱 **3.5" IPS Touchscreen** - Responsive touch interface (320x480)
+- ⚡ **ESP32-WROVER-B Powered** - Dual-core 240MHz with 8MB PSRAM
 
 ### User Interface
 - 🎨 **Ultra-modern Glassmorphism UI** - Beautiful translucent card design
@@ -37,9 +37,26 @@ A modern touchscreen controller for GSPro Golf Simulator using the WT32-SC01 Plu
 
 ## Hardware Requirements
 
-- **WT32-SC01 Plus V3.3** ESP32-S3 board with integrated 3.5" touchscreen
-- USB-C cable for programming and power
-- Computer running Windows, macOS, or Linux
+### Required Hardware
+
+- **ESP32-WROVER-B Module** with 32Mbit (4MB) flash and 8MB PSRAM
+- **3.5" IPS LCD Display** (320x480 resolution, SPI interface)
+- **Type-C USB Interface** for programming and power
+- **Computer** running Windows, macOS, or Linux
+
+### Detailed Hardware Specifications
+
+For complete hardware specifications including pinout, memory configuration, and technical details, see **[HARDWARE.md](HARDWARE.md)**.
+
+**Quick Specs:**
+- **Module:** ESP32-WROVER-B dual-core @ 240MHz
+- **Flash:** 32 Mbit (4MB) onboard
+- **PSRAM:** 8MB (64 Mbit)
+- **SRAM:** 520KB
+- **ROM:** 448KB
+- **Display:** 3.5" IPS LCD, 320x480, SPI interface (24-pin, 0.5mm pitch)
+- **Touch:** Capacitive touch, I2C interface (FT5x06)
+- **Power:** USB Type-C, 5V DC
 
 ## Software Installation
 
@@ -153,7 +170,7 @@ pio run
 
 ### Step 5: Upload to Device
 
-1. **Connect your WT32-SC01 Plus** to your computer via USB-C
+1. **Connect your ESP32-WROVER-B** board to your computer via USB-C
 2. **Put the device in bootloader mode** (if needed):
    - Some boards enter bootloader mode automatically
    - If not, hold the BOOT button and press RESET
@@ -184,15 +201,16 @@ GSPRO-CONTROLLER/
 
 ## Configuration
 
-The project is pre-configured for the WT32-SC01 Plus V3.3. Key settings in `platformio.ini`:
+The project is pre-configured for the ESP32-WROVER-B with 3.5" display. Key settings in `platformio.ini`:
 
-- **Platform:** ESP32-S3
+- **Board:** ESP32-WROVER-Kit (esp-wrover-kit)
+- **MCU:** ESP32 (dual-core @ 240MHz)
 - **Framework:** Arduino
-- **Display:** ST7796 (480x320 IPS)
-- **Touch:** FT5x06
-- **Flash:** 16MB
-- **PSRAM:** Enabled
-- **USB CDC:** Enabled for serial debugging
+- **Display:** ST7796 (320x480 IPS, SPI interface)
+- **Touch:** FT5x06 (I2C interface)
+- **Flash:** 4MB (32 Mbit)
+- **PSRAM:** 8MB enabled
+- **Upload Speed:** 921600 baud
 
 ### OTA Configuration
 
@@ -325,7 +343,7 @@ upload_port = /dev/cu.usbserial-*  ; macOS
 
 ### Initial Setup
 
-1. **Power on** the WT32-SC01 Plus
+1. **Power on** the ESP32-WROVER-B board via USB-C
 2. The modern UI will appear with a boot animation
 3. **Pair via Bluetooth:**
    - On your computer, search for Bluetooth devices
@@ -418,16 +436,24 @@ This project is open source. Please check the LICENSE file for details.
 **Built with:**
 - PlatformIO IDE
 - Arduino Framework for ESP32
-- ESP32-S3 with dual-core processor @ 240MHz
-- 16MB Flash memory
-- PSRAM enabled for smooth graphics
+- ESP32-WROVER-B with dual-core Xtensa LX6 @ 240MHz
+- 4MB (32 Mbit) Flash memory
+- 8MB PSRAM enabled for smooth graphics
+- 520KB SRAM, 448KB ROM
 
 **Key Technologies:**
 - Bluetooth Low Energy (BLE) HID
 - WiFi 802.11 b/g/n (2.4GHz)
 - ArduinoOTA for wireless updates
-- LVGL graphics with hardware acceleration
+- LVGL v9.4.0 graphics with hardware acceleration
+- LovyanGFX v1.2.7 display driver
 - Deep sleep with timer-based wake
+
+**Hardware Interfaces:**
+- SPI display interface (ST7796 controller)
+- I2C touch interface (FT5x06 controller)
+- USB Type-C for power and programming
+- See [HARDWARE.md](HARDWARE.md) for complete pin configuration
 
 ---
 
