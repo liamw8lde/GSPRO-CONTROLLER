@@ -367,8 +367,12 @@ static void btn_deep_sleep_handler(lv_event_t *e) {
         lcd.println("Touch to wake up");
         delay(2000);
 
-        // Configure touch to wake
-        esp_sleep_enable_ext0_wakeup(GPIO_NUM_7, 0);  // Touch interrupt pin
+        // Turn off display backlight to save power
+        lcd.setBrightness(0);
+
+        // Configure timer wake-up every 1 second to check for touch
+        // This uses minimal power while allowing touch detection
+        esp_sleep_enable_timer_wakeup(1000000); // 1 second in microseconds
 
         // Enter deep sleep
         esp_deep_sleep_start();
@@ -898,10 +902,10 @@ void create_settings_screen() {
     lv_obj_center(lbl_sleep);
 
     lv_obj_t *power_hint = lv_label_create(power_panel);
-    lv_label_set_text(power_hint, "Touch screen to wake");
+    lv_label_set_text(power_hint, "Touch screen to wake (auto-detects)");
     lv_obj_set_style_text_color(power_hint, lv_color_hex(COLOR_TEXT_MUTED), 0);
     lv_obj_set_style_text_font(power_hint, &lv_font_montserrat_12, 0);
-    lv_obj_set_pos(power_hint, 125, 28);
+    lv_obj_set_pos(power_hint, 95, 28);
 }
 
 void show_settings_screen() {
@@ -980,6 +984,33 @@ void start_pulse_animation() {
 // ============================================================================
 void setup() {
     Serial.begin(115200);
+
+    // Check if waking from deep sleep
+    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
+        Serial.println("Woke from timer - checking for touch");
+
+        // Initialize display briefly to check touch
+        lcd.init();
+        lcd.setRotation(1);
+
+        // Quick touch check
+        uint16_t x, y;
+        bool touched = lcd.getTouch(&x, &y);
+
+        if (!touched) {
+            // No touch detected, go back to sleep immediately
+            Serial.println("No touch - returning to sleep");
+            lcd.setBrightness(0);
+            esp_sleep_enable_timer_wakeup(1000000); // 1 second
+            esp_deep_sleep_start();
+        }
+
+        // Touch detected, continue with full boot
+        Serial.println("Touch detected - waking up!");
+    }
+
     Serial.println("GSPro Controller - Ultra Modern UI");
 
     // Initialize display
