@@ -1192,8 +1192,7 @@ void loop() {
                     networks += WiFi.RSSI(i);
                     networks += " dBm)";
                     if (WiFi.encryptionType(i) != WIFI_AUTH_OPEN) {
-                        networks += " ";
-                        networks += LV_SYMBOL_LOCK;
+                        networks += " *";
                     }
                     networks += "\n";
                 }
