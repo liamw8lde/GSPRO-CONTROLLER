@@ -1,0 +1,25 @@
+# PlatformIO
+.pio
+.pioenvs
+.piolibdeps
+.clang_complete
+.gcc-flags.json
+lib/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build files
+build/
+*.elf
+*.bin
+*.hex
+*.map
+
+# OS files
+.DS_Store
+Thumbs.db
