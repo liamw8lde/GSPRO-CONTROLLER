@@ -65,6 +65,7 @@ public:
             cfg.pin_dc = 2;
             cfg.dma_channel = 1;
             cfg.bus_shared = false;
+
             _bus_instance.config(cfg);
             _panel_instance.setBus(&_bus_instance);
         }
