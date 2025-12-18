@@ -162,6 +162,10 @@ static String selected_ssid = "";
 static bool wifi_scanning = false;
 static unsigned long last_wifi_scan = 0;
 
+// OTA state
+static bool ota_configured = false;
+static bool ota_ready = false;
+
 // Styles
 static lv_style_t style_glass_card;
 static lv_style_t style_neon_btn;
@@ -318,6 +322,9 @@ static void btn_right_handler(lv_event_t *e) {
 // ============================================================================
 void show_settings_screen();
 void show_main_screen();
+void configure_ota();
+void begin_ota_if_connected();
+void on_wifi_event(WiFiEvent_t event);
 
 static void btn_settings_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
@@ -919,6 +926,106 @@ void show_main_screen() {
     current_screen = SCREEN_MAIN;
 }
 
+void configure_ota() {
+    if (ota_configured) {
+        return;
+    }
+
+    ArduinoOTA.setHostname("GSProController");
+    ArduinoOTA.setPassword("gspro2024");  // Change this password!
+
+    ArduinoOTA.onStart([]() {
+        String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
+        Serial.println("OTA Start updating " + type);
+        if (ota_status_label) {
+            lv_label_set_text(ota_status_label, "Updating firmware...");
+        }
+    });
+
+    ArduinoOTA.onEnd([]() {
+        Serial.println("\nOTA End");
+        if (ota_status_label) {
+            lv_label_set_text(ota_status_label, "Update complete! Rebooting...");
+        }
+    });
+
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        unsigned int percent = (progress / (total / 100));
+        Serial.printf("OTA Progress: %u%%\r", percent);
+        if (ota_progress_bar) {
+            lv_bar_set_value(ota_progress_bar, percent, LV_ANIM_OFF);
+        }
+        if (ota_status_label) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "Updating: %u%%", percent);
+            lv_label_set_text(ota_status_label, buf);
+        }
+    });
+
+    ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("OTA Error[%u]: ", error);
+        String errorMsg = "Error: ";
+        if (error == OTA_AUTH_ERROR) errorMsg += "Auth Failed";
+        else if (error == OTA_BEGIN_ERROR) errorMsg += "Begin Failed";
+        else if (error == OTA_CONNECT_ERROR) errorMsg += "Connect Failed";
+        else if (error == OTA_RECEIVE_ERROR) errorMsg += "Receive Failed";
+        else if (error == OTA_END_ERROR) errorMsg += "End Failed";
+        Serial.println(errorMsg);
+        if (ota_status_label) {
+            lv_label_set_text(ota_status_label, errorMsg.c_str());
+        }
+    });
+
+    ota_configured = true;
+}
+
+void begin_ota_if_connected() {
+    if (ota_ready) {
+        return;
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("OTA not started - WiFi not connected");
+        if (ota_status_label) {
+            lv_label_set_text(ota_status_label, "Connect to WiFi for OTA");
+        }
+        return;
+    }
+
+    configure_ota();
+    ArduinoOTA.begin();
+    ota_ready = true;
+
+    Serial.printf("OTA initialized. Hostname: GSProController, Password: gspro2024, IP: %s\n",
+                  WiFi.localIP().toString().c_str());
+    if (ota_status_label) {
+        lv_label_set_text(ota_status_label, "OTA Ready - Listening on network");
+    }
+}
+
+void on_wifi_event(WiFiEvent_t event) {
+    switch (event) {
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            Serial.printf("WiFi connected, IP address: %s\n", WiFi.localIP().toString().c_str());
+            if (wifi_status_label) {
+                String status = "Connected: " + WiFi.SSID();
+                lv_label_set_text(wifi_status_label, status.c_str());
+            }
+            begin_ota_if_connected();
+            break;
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            Serial.println("WiFi disconnected - reconnecting...");
+            ota_ready = false;
+            if (ota_status_label) {
+                lv_label_set_text(ota_status_label, "Connect to WiFi for OTA");
+            }
+            WiFi.reconnect();
+            break;
+        default:
+            break;
+    }
+}
+
 void create_ui() {
     setup_styles();
 
@@ -1053,58 +1160,20 @@ void setup() {
 
     Serial.println("UI Ready!");
 
+    if (ota_status_label) {
+        lv_label_set_text(ota_status_label, "Connect to WiFi for OTA");
+    }
+
     // Initialize WiFi in STA mode
+    WiFi.onEvent(on_wifi_event);
     WiFi.mode(WIFI_STA);
+    WiFi.setHostname("GSProController");
+    WiFi.setAutoReconnect(true);
+    WiFi.begin();
     Serial.println("WiFi initialized in Station mode");
 
-    // Initialize ArduinoOTA
-    ArduinoOTA.setHostname("GSProController");
-    ArduinoOTA.setPassword("gspro2024");  // Change this password!
-
-    ArduinoOTA.onStart([]() {
-        String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
-        Serial.println("OTA Start updating " + type);
-        if (ota_status_label) {
-            lv_label_set_text(ota_status_label, "Updating firmware...");
-        }
-    });
-
-    ArduinoOTA.onEnd([]() {
-        Serial.println("\nOTA End");
-        if (ota_status_label) {
-            lv_label_set_text(ota_status_label, "Update complete! Rebooting...");
-        }
-    });
-
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        unsigned int percent = (progress / (total / 100));
-        Serial.printf("OTA Progress: %u%%\r", percent);
-        if (ota_progress_bar) {
-            lv_bar_set_value(ota_progress_bar, percent, LV_ANIM_OFF);
-        }
-        if (ota_status_label) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "Updating: %u%%", percent);
-            lv_label_set_text(ota_status_label, buf);
-        }
-    });
-
-    ArduinoOTA.onError([](ota_error_t error) {
-        Serial.printf("OTA Error[%u]: ", error);
-        String errorMsg = "Error: ";
-        if (error == OTA_AUTH_ERROR) errorMsg += "Auth Failed";
-        else if (error == OTA_BEGIN_ERROR) errorMsg += "Begin Failed";
-        else if (error == OTA_CONNECT_ERROR) errorMsg += "Connect Failed";
-        else if (error == OTA_RECEIVE_ERROR) errorMsg += "Receive Failed";
-        else if (error == OTA_END_ERROR) errorMsg += "End Failed";
-        Serial.println(errorMsg);
-        if (ota_status_label) {
-            lv_label_set_text(ota_status_label, errorMsg.c_str());
-        }
-    });
-
-    ArduinoOTA.begin();
-    Serial.println("OTA initialized. Hostname: GSProController, Password: gspro2024");
+    configure_ota();
+    begin_ota_if_connected();
 }
 
 // ============================================================================
@@ -1116,8 +1185,14 @@ bool wasConnected = false;
 void loop() {
     lv_timer_handler();
 
-    // Handle OTA updates
-    ArduinoOTA.handle();
+    // Handle OTA updates when WiFi is ready
+    if (WiFi.status() == WL_CONNECTED && !ota_ready) {
+        begin_ota_if_connected();
+    }
+
+    if (ota_ready) {
+        ArduinoOTA.handle();
+    }
 
     // Update connection status every 500ms
     if (millis() - lastConnectionCheck > 500) {
