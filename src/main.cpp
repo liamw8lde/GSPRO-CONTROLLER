@@ -19,7 +19,6 @@
 #include <esp_sleep.h>
 #include <esp_wifi.h>
 
-#define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 #include <lvgl.h>
 
@@ -128,9 +127,10 @@ public:
 LGFX lcd;
 BleKeyboard bleKeyboard("GSPro Controller", "ESP32", 100);
 
-static lv_disp_draw_buf_t draw_buf;
 static lv_color_t buf1[480 * 30];
 static lv_color_t buf2[480 * 30];
+static lv_display_t *display;
+static lv_indev_t *input_device;
 
 static const uint16_t screenWidth = 480;
 static const uint16_t screenHeight = 320;
@@ -179,17 +179,18 @@ static lv_anim_t pulse_anim;
 // ============================================================================
 // LVGL Callbacks
 // ============================================================================
-void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
+void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *color_p) {
+    auto *colors = reinterpret_cast<lv_color_t *>(color_p);
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
     lcd.startWrite();
     lcd.setAddrWindow(area->x1, area->y1, w, h);
-    lcd.writePixels((lgfx::rgb565_t *)&color_p->full, w * h);
+    lcd.writePixels((lgfx::rgb565_t *)colors, w * h);
     lcd.endWrite();
-    lv_disp_flush_ready(disp);
+    lv_display_flush_ready(disp);
 }
 
-void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data) {
+void my_touchpad_read(lv_indev_t *indev_driver, lv_indev_data_t *data) {
     uint16_t touchX, touchY;
     bool touched = lcd.getTouch(&touchX, &touchY);
     if (touched) {
@@ -1039,21 +1040,14 @@ void setup() {
 
     // Initialize LVGL
     lv_init();
-    lv_disp_draw_buf_init(&draw_buf, buf1, buf2, screenWidth * 30);
 
-    static lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = screenWidth;
-    disp_drv.ver_res = screenHeight;
-    disp_drv.flush_cb = my_disp_flush;
-    disp_drv.draw_buf = &draw_buf;
-    lv_disp_drv_register(&disp_drv);
+    display = lv_display_create(screenWidth, screenHeight);
+    lv_display_set_flush_cb(display, my_disp_flush);
+    lv_display_set_buffers(display, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-    static lv_indev_drv_t indev_drv;
-    lv_indev_drv_init(&indev_drv);
-    indev_drv.type = LV_INDEV_TYPE_POINTER;
-    indev_drv.read_cb = my_touchpad_read;
-    lv_indev_drv_register(&indev_drv);
+    input_device = lv_indev_create();
+    lv_indev_set_type(input_device, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(input_device, my_touchpad_read);
 
     // Create UI
     create_ui();
