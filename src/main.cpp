@@ -14,10 +14,7 @@
 
 #include <Arduino.h>
 #include <BleKeyboard.h>
-#include <WiFi.h>
-#include <ArduinoOTA.h>
 #include <esp_sleep.h>
-#include <esp_wifi.h>
 
 #include <LovyanGFX.hpp>
 #include <lvgl.h>
@@ -143,11 +140,6 @@ static lv_obj_t *settings_container;
 static lv_obj_t *main_screen;
 static lv_obj_t *settings_screen;
 
-// Settings screen UI elements
-static lv_obj_t *wifi_status_label;
-static lv_obj_t *wifi_list;
-static lv_obj_t *ota_status_label;
-static lv_obj_t *ota_progress_bar;
 static lv_obj_t *bt_status_label;
 
 // Screen state
@@ -156,15 +148,6 @@ enum ScreenState {
     SCREEN_SETTINGS
 };
 static ScreenState current_screen = SCREEN_MAIN;
-
-// WiFi state
-static String selected_ssid = "";
-static bool wifi_scanning = false;
-static unsigned long last_wifi_scan = 0;
-
-// OTA state
-static bool ota_configured = false;
-static bool ota_ready = false;
 
 // Styles
 static lv_style_t style_glass_card;
@@ -322,9 +305,6 @@ static void btn_right_handler(lv_event_t *e) {
 // ============================================================================
 void show_settings_screen();
 void show_main_screen();
-void configure_ota();
-void begin_ota_if_connected();
-void on_wifi_event(WiFiEvent_t event);
 
 static void btn_settings_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
@@ -335,29 +315,6 @@ static void btn_settings_handler(lv_event_t *e) {
 static void btn_back_to_main_handler(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         show_main_screen();
-    }
-}
-
-static void btn_wifi_scan_handler(lv_event_t *e) {
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
-        lv_label_set_text(wifi_status_label, "Scanning...");
-        wifi_scanning = true;
-        WiFi.scanDelete();
-        WiFi.scanNetworks(true);  // Async scan
-    }
-}
-
-static void btn_wifi_disconnect_handler(lv_event_t *e) {
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
-        WiFi.disconnect();
-        lv_label_set_text(wifi_status_label, "Disconnected");
-    }
-}
-
-static void btn_ota_update_handler(lv_event_t *e) {
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
-        lv_label_set_text(ota_status_label, "OTA Ready - Listening on network");
-        // OTA is already initialized, just update status
     }
 }
 
@@ -781,59 +738,10 @@ void create_settings_screen() {
     lv_obj_set_style_text_font(settings_title, &lv_font_montserrat_24, 0);
     lv_obj_align(settings_title, LV_ALIGN_CENTER, 0, 0);
 
-    // ========== WiFi Panel ==========
-    lv_obj_t *wifi_panel = lv_obj_create(settings_screen);
-    lv_obj_set_size(wifi_panel, 220, 240);
-    lv_obj_set_pos(wifi_panel, 10, 55);
-    lv_obj_add_style(wifi_panel, &style_glass_card, 0);
-    lv_obj_clear_flag(wifi_panel, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *wifi_title = lv_label_create(wifi_panel);
-    lv_label_set_text(wifi_title, LV_SYMBOL_WIFI " WiFi");
-    lv_obj_set_style_text_color(wifi_title, lv_color_hex(COLOR_ACCENT_CYAN), 0);
-    lv_obj_set_style_text_font(wifi_title, &lv_font_montserrat_16, 0);
-    lv_obj_set_pos(wifi_title, 0, -5);
-
-    wifi_status_label = lv_label_create(wifi_panel);
-    lv_label_set_text(wifi_status_label, "Disconnected");
-    lv_obj_set_style_text_color(wifi_status_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
-    lv_obj_set_style_text_font(wifi_status_label, &lv_font_montserrat_12, 0);
-    lv_obj_set_pos(wifi_status_label, 0, 25);
-
-    // WiFi Scan button
-    lv_obj_t *btn_scan = lv_btn_create(wifi_panel);
-    lv_obj_set_size(btn_scan, 90, 35);
-    lv_obj_set_pos(btn_scan, 0, 50);
-    lv_obj_add_style(btn_scan, &style_neon_btn, 0);
-    lv_obj_add_style(btn_scan, &style_neon_btn_pressed, LV_STATE_PRESSED);
-    lv_obj_add_event_cb(btn_scan, btn_wifi_scan_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_scan = lv_label_create(btn_scan);
-    lv_label_set_text(lbl_scan, "SCAN");
-    lv_obj_center(lbl_scan);
-
-    // WiFi Disconnect button
-    lv_obj_t *btn_disconnect = lv_btn_create(wifi_panel);
-    lv_obj_set_size(btn_disconnect, 90, 35);
-    lv_obj_set_pos(btn_disconnect, 100, 50);
-    lv_obj_add_style(btn_disconnect, &style_special_btn, 0);
-    lv_obj_add_style(btn_disconnect, &style_special_btn_pressed, LV_STATE_PRESSED);
-    lv_obj_add_event_cb(btn_disconnect, btn_wifi_disconnect_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_disconnect = lv_label_create(btn_disconnect);
-    lv_label_set_text(lbl_disconnect, "DISCONNECT");
-    lv_obj_center(lbl_disconnect);
-
-    // WiFi networks list (scrollable)
-    wifi_list = lv_textarea_create(wifi_panel);
-    lv_obj_set_size(wifi_list, 190, 120);
-    lv_obj_set_pos(wifi_list, 0, 95);
-    lv_textarea_set_text(wifi_list, "Press SCAN to find networks");
-    lv_obj_set_style_text_font(wifi_list, &lv_font_montserrat_12, 0);
-    lv_textarea_set_cursor_click_pos(wifi_list, false);
-
     // ========== Bluetooth Panel ==========
     lv_obj_t *bt_panel = lv_obj_create(settings_screen);
-    lv_obj_set_size(bt_panel, 220, 115);
-    lv_obj_set_pos(bt_panel, 240, 55);
+    lv_obj_set_size(bt_panel, 450, 140);
+    lv_obj_set_pos(bt_panel, 15, 60);
     lv_obj_add_style(bt_panel, &style_glass_card, 0);
     lv_obj_clear_flag(bt_panel, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -851,8 +759,8 @@ void create_settings_screen() {
 
     // BT Reconnect button
     lv_obj_t *btn_bt_reconnect = lv_btn_create(bt_panel);
-    lv_obj_set_size(btn_bt_reconnect, 190, 38);
-    lv_obj_set_pos(btn_bt_reconnect, 0, 55);
+    lv_obj_set_size(btn_bt_reconnect, 220, 45);
+    lv_obj_set_pos(btn_bt_reconnect, 0, 60);
     lv_obj_add_style(btn_bt_reconnect, &style_neon_btn, 0);
     lv_obj_add_style(btn_bt_reconnect, &style_neon_btn_pressed, LV_STATE_PRESSED);
     lv_obj_add_event_cb(btn_bt_reconnect, btn_bt_reconnect_handler, LV_EVENT_CLICKED, NULL);
@@ -860,36 +768,10 @@ void create_settings_screen() {
     lv_label_set_text(lbl_bt_reconnect, "RESTART BLE");
     lv_obj_center(lbl_bt_reconnect);
 
-    // ========== OTA Panel ==========
-    lv_obj_t *ota_panel = lv_obj_create(settings_screen);
-    lv_obj_set_size(ota_panel, 220, 115);
-    lv_obj_set_pos(ota_panel, 240, 180);
-    lv_obj_add_style(ota_panel, &style_glass_card, 0);
-    lv_obj_clear_flag(ota_panel, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *ota_title = lv_label_create(ota_panel);
-    lv_label_set_text(ota_title, LV_SYMBOL_DOWNLOAD " OTA Update");
-    lv_obj_set_style_text_color(ota_title, lv_color_hex(COLOR_ACCENT_ORANGE), 0);
-    lv_obj_set_style_text_font(ota_title, &lv_font_montserrat_16, 0);
-    lv_obj_set_pos(ota_title, 0, -5);
-
-    ota_status_label = lv_label_create(ota_panel);
-    lv_label_set_text(ota_status_label, "Ready for updates");
-    lv_obj_set_style_text_color(ota_status_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
-    lv_obj_set_style_text_font(ota_status_label, &lv_font_montserrat_12, 0);
-    lv_obj_set_pos(ota_status_label, 0, 25);
-
-    ota_progress_bar = lv_bar_create(ota_panel);
-    lv_obj_set_size(ota_progress_bar, 190, 15);
-    lv_obj_set_pos(ota_progress_bar, 0, 48);
-    lv_bar_set_value(ota_progress_bar, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(ota_progress_bar, lv_color_hex(COLOR_BG_CARD), 0);
-    lv_obj_set_style_bg_color(ota_progress_bar, lv_color_hex(COLOR_ACCENT_ORANGE), LV_PART_INDICATOR);
-
     // ========== Power Panel ==========
     lv_obj_t *power_panel = lv_obj_create(settings_screen);
     lv_obj_set_size(power_panel, 450, 60);
-    lv_obj_set_pos(power_panel, 10, 305);
+    lv_obj_set_pos(power_panel, 15, 215);
     lv_obj_add_style(power_panel, &style_glass_card, 0);
     lv_obj_clear_flag(power_panel, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -924,106 +806,6 @@ void show_main_screen() {
     if (settings_screen) lv_obj_add_flag(settings_screen, LV_OBJ_FLAG_HIDDEN);
     if (main_screen) lv_obj_clear_flag(main_screen, LV_OBJ_FLAG_HIDDEN);
     current_screen = SCREEN_MAIN;
-}
-
-void configure_ota() {
-    if (ota_configured) {
-        return;
-    }
-
-    ArduinoOTA.setHostname("GSProController");
-    ArduinoOTA.setPassword("gspro2024");  // Change this password!
-
-    ArduinoOTA.onStart([]() {
-        String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
-        Serial.println("OTA Start updating " + type);
-        if (ota_status_label) {
-            lv_label_set_text(ota_status_label, "Updating firmware...");
-        }
-    });
-
-    ArduinoOTA.onEnd([]() {
-        Serial.println("\nOTA End");
-        if (ota_status_label) {
-            lv_label_set_text(ota_status_label, "Update complete! Rebooting...");
-        }
-    });
-
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        unsigned int percent = (progress / (total / 100));
-        Serial.printf("OTA Progress: %u%%\r", percent);
-        if (ota_progress_bar) {
-            lv_bar_set_value(ota_progress_bar, percent, LV_ANIM_OFF);
-        }
-        if (ota_status_label) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "Updating: %u%%", percent);
-            lv_label_set_text(ota_status_label, buf);
-        }
-    });
-
-    ArduinoOTA.onError([](ota_error_t error) {
-        Serial.printf("OTA Error[%u]: ", error);
-        String errorMsg = "Error: ";
-        if (error == OTA_AUTH_ERROR) errorMsg += "Auth Failed";
-        else if (error == OTA_BEGIN_ERROR) errorMsg += "Begin Failed";
-        else if (error == OTA_CONNECT_ERROR) errorMsg += "Connect Failed";
-        else if (error == OTA_RECEIVE_ERROR) errorMsg += "Receive Failed";
-        else if (error == OTA_END_ERROR) errorMsg += "End Failed";
-        Serial.println(errorMsg);
-        if (ota_status_label) {
-            lv_label_set_text(ota_status_label, errorMsg.c_str());
-        }
-    });
-
-    ota_configured = true;
-}
-
-void begin_ota_if_connected() {
-    if (ota_ready) {
-        return;
-    }
-
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("OTA not started - WiFi not connected");
-        if (ota_status_label) {
-            lv_label_set_text(ota_status_label, "Connect to WiFi for OTA");
-        }
-        return;
-    }
-
-    configure_ota();
-    ArduinoOTA.begin();
-    ota_ready = true;
-
-    Serial.printf("OTA initialized. Hostname: GSProController, Password: gspro2024, IP: %s\n",
-                  WiFi.localIP().toString().c_str());
-    if (ota_status_label) {
-        lv_label_set_text(ota_status_label, "OTA Ready - Listening on network");
-    }
-}
-
-void on_wifi_event(WiFiEvent_t event) {
-    switch (event) {
-        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            Serial.printf("WiFi connected, IP address: %s\n", WiFi.localIP().toString().c_str());
-            if (wifi_status_label) {
-                String status = "Connected: " + WiFi.SSID();
-                lv_label_set_text(wifi_status_label, status.c_str());
-            }
-            begin_ota_if_connected();
-            break;
-        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-            Serial.println("WiFi disconnected - reconnecting...");
-            ota_ready = false;
-            if (ota_status_label) {
-                lv_label_set_text(ota_status_label, "Connect to WiFi for OTA");
-            }
-            WiFi.reconnect();
-            break;
-        default:
-            break;
-    }
 }
 
 void create_ui() {
@@ -1159,21 +941,6 @@ void setup() {
     start_pulse_animation();
 
     Serial.println("UI Ready!");
-
-    if (ota_status_label) {
-        lv_label_set_text(ota_status_label, "Connect to WiFi for OTA");
-    }
-
-    // Initialize WiFi in STA mode
-    WiFi.onEvent(on_wifi_event);
-    WiFi.mode(WIFI_STA);
-    WiFi.setHostname("GSProController");
-    WiFi.setAutoReconnect(true);
-    WiFi.begin();
-    Serial.println("WiFi initialized in Station mode");
-
-    configure_ota();
-    begin_ota_if_connected();
 }
 
 // ============================================================================
@@ -1184,15 +951,6 @@ bool wasConnected = false;
 
 void loop() {
     lv_timer_handler();
-
-    // Handle OTA updates when WiFi is ready
-    if (WiFi.status() == WL_CONNECTED && !ota_ready) {
-        begin_ota_if_connected();
-    }
-
-    if (ota_ready) {
-        ArduinoOTA.handle();
-    }
 
     // Update connection status every 500ms
     if (millis() - lastConnectionCheck > 500) {
@@ -1222,16 +980,6 @@ void loop() {
             }
         }
 
-        // Update WiFi status in settings screen
-        if (current_screen == SCREEN_SETTINGS && wifi_status_label) {
-            if (WiFi.status() == WL_CONNECTED) {
-                String status = "Connected: " + WiFi.SSID();
-                lv_label_set_text(wifi_status_label, status.c_str());
-            } else if (!wifi_scanning) {
-                lv_label_set_text(wifi_status_label, "Disconnected");
-            }
-        }
-
         // Update Bluetooth status in settings screen
         if (current_screen == SCREEN_SETTINGS && bt_status_label) {
             if (bleKeyboard.isConnected()) {
@@ -1239,42 +987,6 @@ void loop() {
             } else {
                 lv_label_set_text(bt_status_label, "Status: Waiting for pairing...");
             }
-        }
-    }
-
-    // Handle WiFi scan results
-    if (wifi_scanning) {
-        int n = WiFi.scanComplete();
-        if (n >= 0) {
-            wifi_scanning = false;
-
-            if (n == 0) {
-                lv_textarea_set_text(wifi_list, "No networks found");
-                lv_label_set_text(wifi_status_label, "No networks found");
-            } else {
-                String networks = "";
-                for (int i = 0; i < n && i < 15; i++) {  // Limit to 15 networks
-                    networks += WiFi.SSID(i);
-                    networks += " (";
-                    networks += WiFi.RSSI(i);
-                    networks += " dBm)";
-                    if (WiFi.encryptionType(i) != WIFI_AUTH_OPEN) {
-                        networks += " *";
-                    }
-                    networks += "\n";
-                }
-                lv_textarea_set_text(wifi_list, networks.c_str());
-
-                char buf[64];
-                snprintf(buf, sizeof(buf), "Found %d networks", n);
-                lv_label_set_text(wifi_status_label, buf);
-
-                Serial.printf("Found %d networks\n", n);
-            }
-        } else if (n == WIFI_SCAN_FAILED) {
-            wifi_scanning = false;
-            lv_textarea_set_text(wifi_list, "Scan failed");
-            lv_label_set_text(wifi_status_label, "Scan failed");
         }
     }
 
